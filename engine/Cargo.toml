@@ -17,10 +17,15 @@ path = "src/bin/demo.rs"
 name = "scan"
 path = "src/bin/scan.rs"
 
+[[bin]]
+name = "live_red"
+path = "src/bin/live_red.rs"
+
 [dependencies]
 litesvm = "0.13"
 bincode = "1"
 ureq = { version = "2", features = ["json"] }
+solana-message = "3"
 solana-pubkey = "3"
 solana-account = "3"
 solana-instruction = "3"

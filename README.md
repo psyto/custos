@@ -137,7 +137,8 @@ custos/
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
     ├── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
-    └── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
+    ├── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
+    └── src/bin/live_red.rs #   LIVE RED: real account state × prospective drainer
 ```
 
 ### Stage 1 (in progress): engine core
@@ -159,8 +160,15 @@ post-simulation **state**, with unit tests.
 clone every touched account (ALT-resolved) + every invoked program into LiteSVM,
 simulate, and run the bank — emitting a `verdict_json`. Verified end-to-end on real
 Jupiter swaps (e.g. 54 accounts / 8 programs), correctly GREEN on benign swaps with
-no false findings even when historical replay reverts on stale price. Next: the
-wallet UI, and F1 refinement + more invariants (unknown-program CPI, account-close).
+no false findings even when historical replay reverts on stale price.
+
+**Live RED** (`cargo run --bin live_red`): the product's true mode — clone a *real*
+on-chain USDC token account (current state) and simulate a *prospective* drainer
+(memo "claim" + hidden `Approve(u64::MAX)`). On real account state the engine returns
+RED (F2, unlimited delegate) while a balance-diff scanner returns GREEN — no
+historical-replay confound, because a prospective tx's correct pre-state *is* current
+state. Next: the wallet UI, F1 refinement, and more invariants (unknown-program CPI,
+account-close).
 
 ## Related
 
