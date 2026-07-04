@@ -1,0 +1,126 @@
+# Custos
+
+**Simulate a transaction against real mainnet state and check what happens to *your* accounts — before you sign.**
+
+Custos is a Solana **execution firewall**. Given an unsigned transaction (the one a
+dApp or a phishing site is asking you to sign), Custos clones the relevant mainnet
+account state into a local VM, executes the transaction against the *real* on-chain
+programs, and runs a catalog of **user-protective invariants** on the simulated
+outcome. It returns a plain-language GREEN / YELLOW / RED verdict with a reason.
+
+The bet: **signature- and allowlist-based scanners catch yesterday's scams. Custos
+simulates and checks invariants, so it can catch a drainer it has never seen before.**
+
+Custos reuses the LiteSVM / Crucible simulation substrate proven in
+[`psyto/solinv`](https://github.com/psyto/solinv) (a Solana-aware invariant fuzzing
+framework with a 168K-execution mainnet calibration record). solinv points that
+engine at a protocol's fuzz campaign; Custos points the same engine at your next
+transaction.
+
+---
+
+## Status: Stage 0 — technical gate GREEN
+
+Custos is at the earliest stage: the load-bearing technical assumption has been
+validated, and no product exists yet.
+
+The gate answered one question: **can a local VM (LiteSVM) load an *arbitrary*
+mainnet program, clone a *real* mainnet account, execute a transaction against them,
+and observe the outcome (logs, compute units, pre/post state)?** If not, the whole
+"simulate before signing" premise is dead.
+
+| Gate | What it proves | Result |
+| ---- | -------------- | ------ |
+| **A** | Clone a real mainnet account (USDC mint) into LiteSVM; byte-identical round-trip | ✅ GREEN |
+| **B** | Dump an arbitrary mainnet BPF program (Memo, 74 KB `.so`) from mainnet, load it, execute it, capture logs + CU + pre/post lamports | ✅ GREEN |
+| **C** | Real SPL-token transfer → observe **token-balance** pre/post delta (the heart of the "your funds moved" invariant) | ⏳ pending |
+| **D** | Replay a real multi-CPI dApp tx (e.g. a Jupiter swap) against cloned state | ⏳ pending |
+
+Gates A + B establish the *mechanics*. Gates C + D establish *product realism*
+(token-balance deltas and multi-program CPI replay). See
+[`STAGE0_DESIGN.md`](./STAGE0_DESIGN.md) for the full design and asset-reuse map.
+
+### Reproduce the gate
+
+```bash
+# artifacts/ already contains memo.so + usdc_mint.json dumped from mainnet.
+# To refresh them:
+#   solana program dump MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr gate/artifacts/memo.so -u m
+#   solana account EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v -u m --output json > gate/artifacts/usdc_mint.json
+
+cd gate
+cargo run -q
+```
+
+Expected tail: `=== GATE RESULT: GREEN — firewall premise holds ===`
+
+---
+
+## How it works (target architecture)
+
+```
+[dApp / phishing site]  --unsigned tx-->  Custos
+                                            |
+  1. State Loader  --getMultipleAccounts--> mainnet RPC   (clone touched accounts + programs)
+  2. Sim Engine    --LiteSVM.execute------->              (run the REAL programs, capture pre/post + logs)
+  3. Invariant Bank --run detectors-------->              (fire on the simulated outcome)
+  4. Verdict + plain-language reason
+                                            |
+                            GREEN / YELLOW / RED  -->  [user signs or rejects]
+```
+
+Because Custos **replays a concrete transaction** (rather than *constructing*
+malicious instruction variants the way a fuzzer does), it sidesteps solinv's most
+expensive cost — per-protocol `InstructionSpec` authoring and Anchor-version ABI
+gates. It loads the real on-chain bytecode and real accounts and just executes.
+
+## Invariant catalog (the IP)
+
+User-protective invariants that fire on the simulated post-state — protecting the
+*signer*, not the protocol:
+
+| # | Invariant | Fires when | Verdict |
+| - | --------- | ---------- | ------- |
+| F1 | balance-drain guard | user SOL/token balance leaves beyond intent | RED |
+| F2 | delegate/approval guard | `Approve`(unlimited) / `SetAuthority` grants an unknown delegate over the user's token account | RED |
+| F3 | ownership-change guard | an account the user owns changes owner | RED |
+| F4 | account-close guard | a user account is closed, balance to a third party | RED |
+| F5 | unknown-program CPI guard | CPI into a non-allowlisted program, esp. with authority ops | YELLOW→RED |
+| F6 | hidden-instruction guard | the UI-described action ≠ the instructions actually in the tx | RED |
+| F7 | CPI-reentrancy (from solinv) | anomalous CPI structure | YELLOW |
+| F8 | CU-anomaly (from solinv) | near compute-unit ceiling | INFO |
+
+F1–F6 are new (user-safety); F7–F8 are transferred from solinv (protocol-safety).
+
+## Differentiation (honest)
+
+Blockaid / Blowfish already do simulation-based previews. Custos competes on three
+axes only:
+
+1. **Invariant depth + Solana account-model specificity** — catch by *structure*,
+   not by a scam-address list.
+2. **OSS / self-hostable** — the closed SaaS incumbents are not.
+3. **Embeddable SDK + co-signer policy engine** — distributable beyond one wallet.
+
+If the invariant depth can't be *shown* to beat the incumbents in a live demo, this
+is a second-mover. The demo is the product.
+
+## Repository layout
+
+```
+custos/
+├── README.md
+├── STAGE0_DESIGN.md        # full design, asset-reuse map, roadmap
+└── gate/                   # Stage 0 technical gate (Rust + LiteSVM)
+    ├── src/main.rs
+    └── artifacts/          # memo.so + usdc_mint.json dumped from mainnet
+```
+
+## Related
+
+- [`psyto/solinv`](https://github.com/psyto/solinv) — invariant fuzzing framework; the simulation engine Custos reuses.
+- [`psyto/pinocchio-bench`](https://github.com/psyto/pinocchio-bench) — CU benchmark + differential-verification harnesses.
+
+---
+
+*Internal working name. Latin* custos *= guardian / sentinel.*
