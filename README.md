@@ -128,10 +128,32 @@ is a second-mover. The demo is the product.
 custos/
 ├── README.md
 ├── STAGE0_DESIGN.md        # full design, asset-reuse map, roadmap
-└── gate/                   # Stage 0 technical gate (Rust + LiteSVM)
-    ├── src/main.rs
-    └── artifacts/          # memo.so + usdc_mint.json dumped from mainnet
+├── gate/                   # Stage 0 technical gates + incumbent-gap proofs
+│   ├── src/main.rs         #   gate A/B, gate_d, proof_f2, proof_f2_nested
+│   ├── proxy-approve/      #   custom BPF program for the nested-CPI proof
+│   └── artifacts/          #   mainnet .so + account dumps
+└── engine/                 # Stage 1 engine (the real core)
+    ├── src/lib.rs          #   Outcome + invariant bank (F1/F2/F3) + Verdict
+    ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
+    ├── src/spl.rs          #   SPL Token wire helpers
+    └── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
 ```
+
+### Stage 1 (in progress): engine core
+
+`engine/` is the reusable core: `simulate → snapshot → invariants → verdict`.
+`cargo run --bin demo` (in `engine/`) runs three prospective transactions
+through the same engine beside a balance-diff-only scanner:
+
+```
+Benign claim (memo)          balance-diff GREEN | Custos GREEN
+Hidden delegate (Approve MAX) balance-diff GREEN | Custos RED  (F2)
+Silent ownership theft (SetAuthority) balance-diff GREEN | Custos RED (F3)
+```
+
+The invariant bank (`F1Drain`, `F2DelegateGrant`, `F3AuthorityChange`) judges by
+post-simulation **state**, with unit tests. Next: a `scan` CLI/HTTP surface over
+a live State Loader, then the wallet UI.
 
 ## Related
 
