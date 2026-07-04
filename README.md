@@ -136,10 +136,27 @@ custos/
     ├── src/lib.rs          #   Outcome + invariant bank (F1/F2/F3) + Verdict
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
-    ├── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
-    ├── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
-    └── src/bin/live_red.rs #   LIVE RED: real account state × prospective drainer
+│   ├── src/scenarios.rs    #   shared built-in scenarios (demo + API)
+│   ├── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
+│   ├── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
+│   └── src/bin/live_red.rs #   LIVE RED: real account state × prospective drainer
+├── api/                    # axum HTTP service over the engine
+│   └── src/main.rs         #   GET /api/demo (verdicts) + GET / (UI)
+└── web/
+    └── index.html          # wallet-approval UI (balance-diff vs Custos panels)
 ```
+
+### Wallet UI
+
+```bash
+cd api && cargo run          # → http://127.0.0.1:8787
+```
+
+The page simulates each transaction and renders a wallet-style approval card with two
+panels — a balance-diff scanner and the Custos engine — plus a Block/Safe-to-sign
+control. The hidden-delegate and ownership-theft cards show balance-diff GREEN next to
+Custos RED. Verdicts come live from `GET /api/demo` (the engine's shared `scenarios`
+module). The signing flow is still mocked (no Phantom wallet-connect yet).
 
 ### Stage 1 (in progress): engine core
 

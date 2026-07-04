@@ -14,6 +14,7 @@ use std::str::FromStr;
 
 use solana_pubkey::Pubkey;
 
+pub mod scenarios;
 pub mod spl;
 pub mod sim;
 

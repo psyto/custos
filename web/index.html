@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Custos — Solana execution firewall</title>
+<style>
+  :root {
+    --bg:#0b0d12; --panel:#141821; --panel2:#1b202b; --line:#262c3a;
+    --txt:#e8edf6; --dim:#8b93a7; --green:#39d98a; --red:#ff5c72; --amber:#ffb454;
+    --accent:#6ea8ff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:960px; margin:0 auto; padding:48px 20px 80px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand .dot { width:34px; height:34px; border-radius:9px;
+    background:linear-gradient(135deg,var(--accent),#9b6bff); }
+  h1 { font-size:26px; margin:0; letter-spacing:-.3px; }
+  .tag { color:var(--dim); margin:6px 0 0; }
+  .lede { margin:22px 0 8px; color:var(--dim); max-width:680px; }
+  .lede b { color:var(--txt); }
+  .cards { display:flex; flex-direction:column; gap:18px; margin-top:28px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    overflow:hidden; }
+  .card.red { border-color:#43242c; box-shadow:0 0 0 1px #43242c inset; }
+  .card.green { border-color:#1f3a2e; }
+  .head { display:flex; justify-content:space-between; align-items:flex-start;
+    gap:16px; padding:18px 20px 14px; }
+  .head h3 { margin:0 0 4px; font-size:17px; }
+  .head p { margin:0; color:var(--dim); font-size:13.5px; max-width:560px; }
+  .badge { font-size:12px; font-weight:700; padding:6px 12px; border-radius:999px;
+    white-space:nowrap; letter-spacing:.4px; }
+  .badge.green { background:rgba(57,217,138,.13); color:var(--green); }
+  .badge.red { background:rgba(255,92,114,.14); color:var(--red); }
+  .badge.amber { background:rgba(255,180,84,.14); color:var(--amber); }
+  .row { display:grid; grid-template-columns:1fr 1fr; border-top:1px solid var(--line); }
+  .cell { padding:16px 20px; }
+  .cell + .cell { border-left:1px solid var(--line); }
+  .cell h4 { margin:0 0 10px; font-size:11px; letter-spacing:1px; text-transform:uppercase;
+    color:var(--dim); font-weight:700; }
+  .verdict { display:flex; align-items:center; gap:9px; font-weight:700; font-size:15px; }
+  .verdict .k { width:9px; height:9px; border-radius:50%; }
+  .k.green{background:var(--green);} .k.red{background:var(--red);} .k.amber{background:var(--amber);}
+  .note { color:var(--dim); font-size:13px; margin-top:9px; }
+  .finding { background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; margin-top:9px; font-size:13px; }
+  .finding .code { color:var(--red); font-weight:700; font-family:ui-monospace,monospace; font-size:12px; }
+  .finding .msg { color:var(--txt); margin-top:3px; }
+  .act { display:flex; gap:10px; padding:14px 20px 18px; }
+  .btn { flex:1; text-align:center; padding:11px; border-radius:10px; font-weight:700;
+    font-size:14px; border:1px solid var(--line); }
+  .btn.sign-blocked { background:rgba(255,92,114,.10); color:var(--red); border-color:#43242c; }
+  .btn.sign-ok { background:rgba(57,217,138,.10); color:var(--green); border-color:#1f3a2e; }
+  .btn.reject { background:transparent; color:var(--dim); }
+  .foot { margin-top:40px; color:var(--dim); font-size:13px; border-top:1px solid var(--line);
+    padding-top:20px; }
+  code { background:var(--panel2); padding:2px 6px; border-radius:6px; font-size:12.5px; }
+  .loading { color:var(--dim); padding:40px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <h1>Custos</h1>
+      <p class="tag">Solana execution firewall — see what a transaction does to <i>your</i> accounts before you sign.</p>
+    </div>
+  </div>
+
+  <p class="lede">Each transaction below is <b>simulated against real mainnet state</b>. A
+  balance-diff scanner judges safety by whether tokens move. Custos judges by the
+  <b>post-simulation state</b> of the accounts you control — so it catches approvals and
+  authority changes that move <b>zero balance</b> in the transaction yet hand an attacker
+  future control.</p>
+
+  <div id="cards" class="cards"><div class="loading">Simulating scenarios…</div></div>
+
+  <div class="foot">
+    Verdicts are produced live by the Custos engine (<code>GET /api/demo</code>). Benign real
+    swaps scan GREEN via <code>cargo run --bin scan</code>; a real account × prospective drainer
+    scans RED via <code>cargo run --bin live_red</code>. This screen is the wallet-facing surface
+    over that engine.
+  </div>
+</div>
+
+<script>
+const kind = l => l === 'RED' ? 'red' : (l === 'YELLOW' ? 'amber' : 'green');
+const word = l => l === 'RED' ? 'BLOCK' : (l === 'YELLOW' ? 'WARN' : 'SAFE');
+
+function card(s) {
+  const c = kind(s.custos_level);
+  const findings = s.custos_findings.map(f =>
+    `<div class="finding"><span class="code">[${f.code}]</span> <span>${f.account}</span>
+      <div class="msg">${f.message}</div></div>`).join('');
+  const notes = s.naive_notes.map(n => `<div class="note">· ${n}</div>`).join('');
+  const btn = s.custos_level === 'RED'
+    ? `<div class="btn sign-blocked">⛔ Signing blocked</div>`
+    : `<div class="btn sign-ok">✓ Safe to sign</div>`;
+  return `
+  <div class="card ${c}">
+    <div class="head">
+      <div><h3>${s.title}</h3><p>${s.subtitle}</p></div>
+      <div class="badge ${c}">CUSTOS: ${word(s.custos_level)}</div>
+    </div>
+    <div class="row">
+      <div class="cell">
+        <h4>Balance-diff scanner</h4>
+        <div class="verdict"><span class="k ${kind(s.naive_level)}"></span>${s.naive_level}</div>
+        ${notes}
+      </div>
+      <div class="cell">
+        <h4>Custos engine (state invariants)</h4>
+        <div class="verdict"><span class="k ${c}"></span>${s.custos_level}</div>
+        ${findings || '<div class="note">no user-protective invariant fired</div>'}
+      </div>
+    </div>
+    <div class="act">${btn}<div class="btn reject">Reject</div></div>
+  </div>`;
+}
+
+fetch('/api/demo').then(r => r.json()).then(list => {
+  document.getElementById('cards').innerHTML = list.map(card).join('');
+}).catch(e => {
+  document.getElementById('cards').innerHTML =
+    '<div class="loading">Could not reach /api/demo — is the server running?</div>';
+});
+</script>
+</body>
+</html>
