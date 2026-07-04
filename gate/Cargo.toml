@@ -12,6 +12,10 @@ path = "src/main.rs"
 name = "gate_d"
 path = "src/bin/gate_d.rs"
 
+[[bin]]
+name = "proof_f2"
+path = "src/bin/proof_f2.rs"
+
 [dependencies]
 litesvm = "0.13"
 bincode = "1"

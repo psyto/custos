@@ -114,19 +114,44 @@ archival). Environment assembly + execution: proven.
 - **Reusable engineering finding.** Mainnet ALT resolution requires warping the VM
   clock past the table's `last_extended_slot`; otherwise recently-extended entries
   are "not yet active" → `InvalidAddressLookupTableIndex`.
-- **Still open (critique #2 is correct).** No concrete tx yet shown where a
-  simulation wallet (Phantom/Blockaid) passes but Custos's invariants stop it. That
-  proof — not demo polish — is the next real deliverable.
+- **Critique #2 — now has a runnable proof (`gate_d`→`proof_f2`).** See
+  §"Incumbent-gap proof" below.
 - **Fidelity vs archival.** Exact historical reproduction needs archival account
   state (Triton/Helius) — a known, purchasable dependency. The product path
   (prospective tx vs current state) does not need it.
 
+## 8b. Incumbent-gap proof (F2 hidden delegate) — runnable
+
+`gate/src/bin/proof_f2.rs` (`cargo run --bin proof_f2`) demonstrates the structural
+blind spot of "simulate + diff balances":
+
+```
+user USDC before : 1000 (delegate: None)
+  malicious tx = memo "Claim your ARDR airdrop" + hidden Approve(u64::MAX) to attacker
+user USDC after  : 1000 (delegate: attacker, unlimited)   <- no balance moved
+
+Simulator A (balance-diff net-change): USDC delta 0 -> GREEN
+Custos F2 (post-state delegate invariant): delegate=attacker/unlimited -> RED
+one tx later: attacker (delegate) drains -> user 0, attacker 1000
+```
+
+**Honest caveat.** This is *not* a "we beat Blockaid" claim. Mature incumbents ship
+approval-specific heuristics and would likely catch this simple case. "Simulator A" is
+the *balance-diff-only* judgment — the blind spot itself — not a specific product. The
+honest differentiation is **structural (read post-sim state) vs pattern (parse
+top-level instructions)**: an approval granted through a non-standard path — e.g. a
+custom program that CPIs `Approve`/`SetAuthority` internally, or an obfuscated proxy —
+is caught by reading final state but can be missed by an instruction-parser. Building
+that **nested-CPI F2 case** is the stronger follow-up that shows F2 clearing where a
+pattern matcher does not.
+
 ## 9. Roadmap
 
-- **Stage 0 (now):** gates A/B/D GREEN. Multi-program CPI replay (the practicality
-  question) is closed. Remaining: **Gate C** (token-balance pre/post delta for F1/F2)
-  and the **incumbent-gap proof** (critique #2): one concrete tx a simulation wallet
-  passes but Custos stops. That proof gates Stage 1, not UI polish.
+- **Stage 0 (now):** gates A/B/D GREEN; incumbent-gap proof (F2) runnable
+  (`proof_f2`). Multi-program CPI replay and the balance-diff blind spot are both
+  demonstrated. Remaining before Stage 1: the **nested-CPI F2 case** (F2 clearing
+  where an instruction-parser misses), a Gate C token-balance-delta primitive, and an
+  end-to-end latency profile with a warm program cache.
 - **Stage 1 (MVP, weekend-scale):** State Loader + LiteSVM replay + F1/F2/F6 +
   hosted "connect wallet → verdict" web UI + the 3-scenario demo with the
   signature-scanner comparison panel.

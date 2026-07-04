@@ -45,8 +45,12 @@ is answered: yes. Reusable finding: warp the VM clock past every ALT's
 `last_extended_slot` or resolution fails with `InvalidAddressLookupTableIndex`.*
 
 Gates A + B establish the *mechanics*; Gate D establishes *product realism* (real
-multi-program CPI replay assembles and executes). Gate C (token-balance deltas) is the
-remaining primitive for the F1/F2 invariants. See
+multi-program CPI replay assembles and executes). A runnable **incumbent-gap proof**
+(`cargo run --bin proof_f2`) shows the payoff: a tx that leaves USDC balance unchanged
+but grants an attacker an unlimited delegate — a balance-diff preview returns GREEN,
+Custos's F2 post-state invariant returns RED, and the attacker drains the account one
+tx later. (Honest caveat: this illustrates the *balance-diff blind spot*, not a
+head-to-head win over a specific incumbent — see `STAGE0_DESIGN.md` §8b.) See
 [`STAGE0_DESIGN.md`](./STAGE0_DESIGN.md) for the full design and asset-reuse map.
 
 ### Reproduce the gate
