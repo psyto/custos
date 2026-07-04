@@ -139,19 +139,37 @@ one tx later: attacker (delegate) drains -> user 0, attacker 1000
 approval-specific heuristics and would likely catch this simple case. "Simulator A" is
 the *balance-diff-only* judgment — the blind spot itself — not a specific product. The
 honest differentiation is **structural (read post-sim state) vs pattern (parse
-top-level instructions)**: an approval granted through a non-standard path — e.g. a
-custom program that CPIs `Approve`/`SetAuthority` internally, or an obfuscated proxy —
-is caught by reading final state but can be missed by an instruction-parser. Building
-that **nested-CPI F2 case** is the stronger follow-up that shows F2 clearing where a
-pattern matcher does not.
+instructions)**.
+
+### Nested-CPI F2 (done — `proof_f2_nested`)
+
+`gate/src/bin/proof_f2_nested.rs` (`cargo run --bin proof_f2_nested`) sharpens the
+point. A real custom BPF program (`proxy-approve/`, built with `cargo build-sbf`) CPIs
+SPL Token `Approve` *internally*. The malicious tx's only real instruction is an opaque
+8-byte call to that unknown program:
+
+```
+sanity: instruction-parser on a DIRECT top-level Approve -> RED  (parser is real)
+
+malicious tx top-level = Memo + <unknown program>   (Approve hidden in its CPI)
+Simulator C (instruction parser / top-level denylist): -> GREEN
+Custos F2 (post-sim state invariant):                  -> RED (delegate=attacker, unlimited)
+one tx later: attacker drains -> user 0
+```
+
+The verdict layer must read **state** ("did any account I control gain a delegate /
+change authority / lose value?"), which is pattern-agnostic, not a **denylist of
+instruction shapes**. Scope honesty: a simulator that also enumerates inner
+instructions / diffs approvals would catch this too; the durable claim is robustness
+to novel encodings, not a win over any specific simulating incumbent.
 
 ## 9. Roadmap
 
-- **Stage 0 (now):** gates A/B/D GREEN; incumbent-gap proof (F2) runnable
-  (`proof_f2`). Multi-program CPI replay and the balance-diff blind spot are both
-  demonstrated. Remaining before Stage 1: the **nested-CPI F2 case** (F2 clearing
-  where an instruction-parser misses), a Gate C token-balance-delta primitive, and an
-  end-to-end latency profile with a warm program cache.
+- **Stage 0 (now):** gates A/B/D GREEN; incumbent-gap proofs runnable — balance-diff
+  blind spot (`proof_f2`) and instruction-parser blind spot via nested CPI
+  (`proof_f2_nested`). Technical feasibility and the differentiation thesis are both
+  demonstrated in code. Remaining before Stage 1: a Gate C token-balance-delta
+  primitive and an end-to-end latency profile with a warm program cache.
 - **Stage 1 (MVP, weekend-scale):** State Loader + LiteSVM replay + F1/F2/F6 +
   hosted "connect wallet → verdict" web UI + the 3-scenario demo with the
   signature-scanner comparison panel.

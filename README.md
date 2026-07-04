@@ -49,8 +49,12 @@ multi-program CPI replay assembles and executes). A runnable **incumbent-gap pro
 (`cargo run --bin proof_f2`) shows the payoff: a tx that leaves USDC balance unchanged
 but grants an attacker an unlimited delegate — a balance-diff preview returns GREEN,
 Custos's F2 post-state invariant returns RED, and the attacker drains the account one
-tx later. (Honest caveat: this illustrates the *balance-diff blind spot*, not a
-head-to-head win over a specific incumbent — see `STAGE0_DESIGN.md` §8b.) See
+tx later. A second proof (`cargo run --bin proof_f2_nested`) hides the same `Approve`
+inside a custom program's CPI: a top-level instruction parser returns GREEN while
+Custos's post-state invariant returns RED — showing the verdict layer must read state,
+not parse instruction shapes. (Honest caveat: these illustrate blind spots of
+*balance-diff* and *instruction-parsing*, not a head-to-head win over a specific
+simulating incumbent — see `STAGE0_DESIGN.md` §8b.) See
 [`STAGE0_DESIGN.md`](./STAGE0_DESIGN.md) for the full design and asset-reuse map.
 
 ### Reproduce the gate

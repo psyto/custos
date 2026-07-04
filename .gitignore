@@ -8,3 +8,6 @@ gate/artifacts/gd_accts/
 gate/artifacts/gd_tx.b64
 gate/artifacts/ray_*.json
 gate/artifacts/jup_*.json
+
+# proxy program build output
+gate/proxy-approve/target/

@@ -13,6 +13,10 @@ name = "gate_d"
 path = "src/bin/gate_d.rs"
 
 [[bin]]
+name = "proof_f2_nested"
+path = "src/bin/proof_f2_nested.rs"
+
+[[bin]]
 name = "proof_f2"
 path = "src/bin/proof_f2.rs"
 
