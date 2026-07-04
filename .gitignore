@@ -11,3 +11,6 @@ gate/artifacts/jup_*.json
 
 # proxy program build output
 gate/proxy-approve/target/
+
+# scan: cached mainnet program dumps
+engine/artifacts/scan_cache/

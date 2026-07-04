@@ -136,7 +136,8 @@ custos/
     ├── src/lib.rs          #   Outcome + invariant bank (F1/F2/F3) + Verdict
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
-    └── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
+    ├── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
+    └── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
 ```
 
 ### Stage 1 (in progress): engine core
@@ -152,8 +153,14 @@ Silent ownership theft (SetAuthority) balance-diff GREEN | Custos RED (F3)
 ```
 
 The invariant bank (`F1Drain`, `F2DelegateGrant`, `F3AuthorityChange`) judges by
-post-simulation **state**, with unit tests. Next: a `scan` CLI/HTTP surface over
-a live State Loader, then the wallet UI.
+post-simulation **state**, with unit tests.
+
+**Live path** (`cargo run --bin scan -- <SIGNATURE>`): fetch a real mainnet tx,
+clone every touched account (ALT-resolved) + every invoked program into LiteSVM,
+simulate, and run the bank — emitting a `verdict_json`. Verified end-to-end on real
+Jupiter swaps (e.g. 54 accounts / 8 programs), correctly GREEN on benign swaps with
+no false findings even when historical replay reverts on stale price. Next: the
+wallet UI, and F1 refinement + more invariants (unknown-program CPI, account-close).
 
 ## Related
 

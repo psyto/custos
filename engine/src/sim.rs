@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use litesvm::LiteSVM;
 use solana_pubkey::Pubkey;
-use solana_transaction::Transaction;
+use solana_transaction::versioned::VersionedTransaction;
 
 use crate::{AccountSnapshot, Outcome};
 
@@ -27,14 +27,15 @@ fn snapshot(svm: &LiteSVM, keys: &[Pubkey]) -> BTreeMap<Pubkey, Option<AccountSn
 /// simulate a prospective tx, observe what happened to the user's accounts.
 pub fn capture(
     svm: &mut LiteSVM,
-    tx: Transaction,
+    tx: impl Into<VersionedTransaction>,
     user: Pubkey,
     watch: &[Pubkey],
     token_id: Pubkey,
     system_id: Pubkey,
 ) -> Outcome {
     let pre = snapshot(svm, watch);
-    let (logs, success) = match svm.send_transaction(tx) {
+    let vtx: VersionedTransaction = tx.into();
+    let (logs, success) = match svm.send_transaction(vtx) {
         Ok(meta) => (meta.logs, true),
         Err(e) => (e.meta.logs, false),
     };

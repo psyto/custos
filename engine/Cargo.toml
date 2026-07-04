@@ -13,8 +13,14 @@ path = "src/lib.rs"
 name = "demo"
 path = "src/bin/demo.rs"
 
+[[bin]]
+name = "scan"
+path = "src/bin/scan.rs"
+
 [dependencies]
 litesvm = "0.13"
+bincode = "1"
+ureq = { version = "2", features = ["json"] }
 solana-pubkey = "3"
 solana-account = "3"
 solana-instruction = "3"
