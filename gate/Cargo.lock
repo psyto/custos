@@ -799,9 +799,11 @@ name = "custos-gate"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "bincode",
  "litesvm",
  "serde_json",
  "solana-account",
+ "solana-hash 3.1.0",
  "solana-instruction",
  "solana-keypair",
  "solana-pubkey 3.0.0",
@@ -2524,6 +2526,7 @@ version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8064ea1d591ec791be95245058ca40f4f5345d390c200069d0f79bbf55bfae55"
 dependencies = [
+ "borsh",
  "bytemuck",
  "bytemuck_derive",
  "five8",
@@ -2531,6 +2534,7 @@ dependencies = [
  "serde_derive",
  "solana-atomic-u64",
  "solana-sanitize",
+ "wincode 0.4.9",
 ]
 
 [[package]]

@@ -92,17 +92,41 @@ a live demo, Custos is a second-mover. The demo is the product.
 | ---- | ------ | ------ |
 | A | clone real mainnet account into LiteSVM, byte round-trip | ✅ GREEN |
 | B | load + execute arbitrary mainnet BPF `.so`, capture logs/CU/pre-post | ✅ GREEN |
-| C | real SPL-token transfer → token-balance pre/post delta (F1/F2 heart) | ⏳ pending |
-| D | replay a real multi-CPI dApp tx (Jupiter swap) against cloned state | ⏳ pending |
+| D | replay a real multi-CPI Jupiter swap against cloned state; CPI tree executes | ✅ GREEN (caveat) |
+| C | real SPL-token transfer → token-balance pre/post delta (F1/F2 heart) | ⏳ next |
 
-Code: [`gate/`](./gate). Gate B log shows a mainnet-dumped binary executing with
-`invoke [1] … success`, CU 28,410, 5,000-lamport fee captured as a pre/post delta.
+Code: [`gate/`](./gate) (`gate` = A/B, `gate_d` = D). Gate B log shows a mainnet-dumped
+binary executing with `invoke [1] … success`. Gate D assembled 12 cloned accounts + 4
+mainnet programs (Jupiter 2.9 MB, Raydium CLMM 1.7 MB, Token, ATA) and executed the
+real CPI tree `ComputeBudget → ATA → Token → System → Jupiter Route → Raydium CLMM Swap`
+to depth 3, failing only on a stale-price `RequireGtViolated` (current-slot state, not
+archival). Environment assembly + execution: proven.
+
+### Gate D findings (answers the 2026-07-04 external critique)
+
+- **"Multi-CPI replay is a different dimension of complexity / a non-working toy."**
+  Refuted with data. Real Jupiter swaps measured: 14–29 accounts, 4–8 programs, CPI
+  depth ≤3 — bounded, not "infinitely many programs". `getTransaction` returns
+  ALT-resolved `loadedAddresses`, so historical replay needs no self-resolution.
+- **Latency.** Program `.so`s are large (2.9 MB + 1.7 MB) but **static → cacheable**.
+  Only ~12 account states need a live fetch (one `getMultipleAccounts` batch). The
+  latency budget is dominated by cacheable artifacts, not per-sign downloads.
+- **Reusable engineering finding.** Mainnet ALT resolution requires warping the VM
+  clock past the table's `last_extended_slot`; otherwise recently-extended entries
+  are "not yet active" → `InvalidAddressLookupTableIndex`.
+- **Still open (critique #2 is correct).** No concrete tx yet shown where a
+  simulation wallet (Phantom/Blockaid) passes but Custos's invariants stop it. That
+  proof — not demo polish — is the next real deliverable.
+- **Fidelity vs archival.** Exact historical reproduction needs archival account
+  state (Triton/Helius) — a known, purchasable dependency. The product path
+  (prospective tx vs current state) does not need it.
 
 ## 9. Roadmap
 
-- **Stage 0 (now):** gates A/B GREEN. Next: **Gate C → Gate D** (cheap-to-expensive
-  confidence). Gate C de-risks the core F1/F2 balance-delta observation; Gate D
-  closes the practicality question (multi-program CPI replay).
+- **Stage 0 (now):** gates A/B/D GREEN. Multi-program CPI replay (the practicality
+  question) is closed. Remaining: **Gate C** (token-balance pre/post delta for F1/F2)
+  and the **incumbent-gap proof** (critique #2): one concrete tx a simulation wallet
+  passes but Custos stops. That proof gates Stage 1, not UI polish.
 - **Stage 1 (MVP, weekend-scale):** State Loader + LiteSVM replay + F1/F2/F6 +
   hosted "connect wallet → verdict" web UI + the 3-scenario demo with the
   signature-scanner comparison panel.
@@ -111,12 +135,15 @@ Code: [`gate/`](./gate). Gate B log shows a mainnet-dumped binary executing with
 
 ## 10. Risks / open questions
 
-1. **Multi-CPI real-tx replay (Gate D).** Memo is self-contained; a Jupiter swap
-   CPIs into many programs. Can we assemble all touched programs + accounts into
-   LiteSVM? This is the practicality gate. *Green-leaning but unproven.*
-2. **Latency.** State clone + sim must land under ~1.5 s for signing UX. Cloning
-   only touched accounts should suffice — verify.
-3. **Incumbent gap must be demonstrable.** Beating Blockaid/Blowfish has to show in
-   the demo, not in prose.
-4. **Branding.** solinv is public; ship Custos under its own name and cite solinv as
+1. ~~**Multi-CPI real-tx replay (Gate D).**~~ **RESOLVED GREEN** — a real Jupiter
+   swap assembled + executed to CPI depth 3. See Gate D findings above.
+2. **Latency.** State clone + sim must land under ~1.5 s. Gate D shows the heavy
+   artifacts (program `.so`s) are static/cacheable; only ~12 account states need a
+   live fetch. Still to do: an actual end-to-end latency profile with a warm cache.
+3. **Incumbent gap must be demonstrable (critique #2, still open).** The next real
+   deliverable is one coded tx where Phantom/Blockaid's simulation passes but a
+   Custos invariant (e.g. F2 hidden `SetAuthority`) fires. Prose won't do.
+4. **Fidelity.** Exact historical replay needs archival state (Triton/Helius). The
+   product path (prospective tx vs current state) does not.
+5. **Branding.** solinv is public; ship Custos under its own name and cite solinv as
    the engine supplier, not as the same product.

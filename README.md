@@ -33,11 +33,20 @@ and observe the outcome (logs, compute units, pre/post state)?** If not, the who
 | ---- | -------------- | ------ |
 | **A** | Clone a real mainnet account (USDC mint) into LiteSVM; byte-identical round-trip | ✅ GREEN |
 | **B** | Dump an arbitrary mainnet BPF program (Memo, 74 KB `.so`) from mainnet, load it, execute it, capture logs + CU + pre/post lamports | ✅ GREEN |
-| **C** | Real SPL-token transfer → observe **token-balance** pre/post delta (the heart of the "your funds moved" invariant) | ⏳ pending |
-| **D** | Replay a real multi-CPI dApp tx (e.g. a Jupiter swap) against cloned state | ⏳ pending |
+| **D** | Replay a real multi-CPI **Jupiter swap** (19 accounts, 4 programs incl. Jupiter 2.9 MB + Raydium CLMM 1.7 MB) against cloned state; CPI tree executes to depth 3 | ✅ GREEN¹ |
+| **C** | Real SPL-token transfer → observe **token-balance** pre/post delta (the heart of the "your funds moved" invariant) | ⏳ next |
 
-Gates A + B establish the *mechanics*. Gates C + D establish *product realism*
-(token-balance deltas and multi-program CPI replay). See
+¹ *Gate D reaches program logic (`Jupiter Route → Raydium CLMM Swap`) and fails only
+on a stale-price check (`RequireGtViolated`), because state is cloned at the current
+slot while historical replay would need archival state. This confound does not exist
+in the product path (simulating a **prospective** tx against **current** state). The
+load-bearing question — can a local VM assemble + execute a real multi-program CPI tx —
+is answered: yes. Reusable finding: warp the VM clock past every ALT's
+`last_extended_slot` or resolution fails with `InvalidAddressLookupTableIndex`.*
+
+Gates A + B establish the *mechanics*; Gate D establishes *product realism* (real
+multi-program CPI replay assembles and executes). Gate C (token-balance deltas) is the
+remaining primitive for the F1/F2 invariants. See
 [`STAGE0_DESIGN.md`](./STAGE0_DESIGN.md) for the full design and asset-reuse map.
 
 ### Reproduce the gate
