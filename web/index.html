@@ -58,6 +58,19 @@
     padding-top:20px; }
   code { background:var(--panel2); padding:2px 6px; border-radius:6px; font-size:12.5px; }
   .loading { color:var(--dim); padding:40px 0; }
+  .live { margin-top:48px; padding-top:28px; border-top:1px solid var(--line); }
+  .live h2 { font-size:19px; margin:0 0 6px; }
+  .live p { color:var(--dim); max-width:680px; margin:0 0 18px; }
+  button { font:inherit; font-weight:700; padding:11px 16px; border-radius:10px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--txt); cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:linear-gradient(135deg,var(--accent),#9b6bff); border:none; color:#0b0d12; }
+  #pk { color:var(--green); font-size:13px; margin-left:6px; }
+  .livecard { margin-top:18px; }
+  .block-banner { display:flex; align-items:center; gap:10px; padding:14px 16px; border-radius:12px;
+    background:rgba(255,92,114,.10); border:1px solid #43242c; color:var(--red); font-weight:700; margin-top:14px; }
+  .ok-banner { display:flex; align-items:center; gap:10px; padding:14px 16px; border-radius:12px;
+    background:rgba(57,217,138,.10); border:1px solid #1f3a2e; color:var(--green); font-weight:700; margin-top:14px; }
 </style>
 </head>
 <body>
@@ -77,6 +90,19 @@
   future control.</p>
 
   <div id="cards" class="cards"><div class="loading">Simulating scenarios…</div></div>
+
+  <div class="live">
+    <h2>Live pre-sign firewall</h2>
+    <p>Connect a wallet, then let a malicious dApp hand you a transaction. Custos simulates the
+    <b>exact tx</b> against current mainnet state <b>before Phantom is ever asked to sign</b>. On a
+    RED verdict, signing is blocked — the wallet is never prompted.</p>
+    <button id="connect" class="primary">Connect Phantom</button>
+    <span id="pk"></span>
+    <div style="margin-top:14px">
+      <button id="check" disabled>A dApp sends you a “claim airdrop” tx →</button>
+    </div>
+    <div id="liveout"></div>
+  </div>
 
   <div class="foot">
     Verdicts are produced live by the Custos engine (<code>GET /api/demo</code>). Benign real
@@ -127,6 +153,64 @@ fetch('/api/demo').then(r => r.json()).then(list => {
   document.getElementById('cards').innerHTML =
     '<div class="loading">Could not reach /api/demo — is the server running?</div>';
 });
+
+// ---- Live pre-sign firewall (Phantom) ----
+let userPk = null;
+const $ = id => document.getElementById(id);
+
+$('connect').onclick = async () => {
+  const p = window.solana;
+  if (!p || !p.isPhantom) { $('pk').textContent = ' Phantom not detected — install it to try live'; return; }
+  try {
+    const res = await p.connect();
+    userPk = res.publicKey.toString();
+    $('pk').textContent = ' connected: ' + userPk.slice(0,4) + '…' + userPk.slice(-4);
+    $('check').disabled = false;
+  } catch (_) { $('pk').textContent = ' connection rejected'; }
+};
+
+$('check').onclick = async () => {
+  $('liveout').innerHTML = '<div class="note">dApp built a transaction. Custos is simulating it against current mainnet state before signing…</div>';
+  try {
+    // A (malicious) dApp hands the wallet an unsigned tx. In production it
+    // targets your accounts; here it targets a sample real mainnet account.
+    const built = await fetch('/api/build').then(r => r.json());
+    const v = await fetch('/api/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tx_base64: built.tx_base64, user: built.owner })
+    }).then(r => r.json());
+
+    if (v.error) { $('liveout').innerHTML = `<div class="note">${v.error}</div>`; return; }
+
+    const findings = (v.findings || []).map(f =>
+      `<div class="finding"><span class="code">[${f.code}]</span> ${f.account}
+        <div class="msg">${f.message}</div></div>`).join('');
+    const gate = v.level === 'RED'
+      ? `<div class="block-banner">⛔ Custos blocked signing — Phantom was never prompted.</div>`
+      : `<div class="ok-banner">✓ Safe — forwarding to Phantom to sign.</div>`;
+    // On GREEN we would call window.solana.signTransaction(deserialized tx).
+    if (v.level !== 'RED' && userPk) { /* would sign here */ }
+
+    $('liveout').innerHTML = `
+      <div class="card ${v.level === 'RED' ? 'red' : 'green'} livecard">
+        <div class="head">
+          <div><h3>Incoming tx: ${built.summary}</h3>
+            <p>simulated against real state · ${v.cloned_accounts} accounts cloned · ${v.programs} programs</p></div>
+          <div class="badge ${v.level === 'RED' ? 'red' : 'green'}">CUSTOS: ${v.level === 'RED' ? 'BLOCK' : 'SAFE'}</div>
+        </div>
+        <div class="row">
+          <div class="cell"><h4>Balance-diff scanner</h4>
+            <div class="verdict"><span class="k ${v.naive_level === 'RED' ? 'red' : 'green'}"></span>${v.naive_level}</div>
+            ${(v.naive_notes||[]).map(n=>`<div class="note">· ${n}</div>`).join('')}</div>
+          <div class="cell"><h4>Custos engine (state invariants)</h4>
+            <div class="verdict"><span class="k ${v.level === 'RED' ? 'red' : 'green'}"></span>${v.level}</div>
+            ${findings || '<div class="note">no invariant fired</div>'}</div>
+        </div>
+      </div>${gate}`;
+  } catch (e) {
+    $('liveout').innerHTML = '<div class="note">scan failed — is the server running / RPC reachable?</div>';
+  }
+};
 </script>
 </body>
 </html>
