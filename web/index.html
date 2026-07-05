@@ -98,8 +98,9 @@
     RED verdict, signing is blocked — the wallet is never prompted.</p>
     <button id="connect" class="primary">Connect Phantom</button>
     <span id="pk"></span>
-    <div style="margin-top:14px">
-      <button id="check" disabled>A dApp sends you a “claim airdrop” tx →</button>
+    <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+      <button id="drainer" disabled>Receive a “claim airdrop” tx (drainer)</button>
+      <button id="benign" disabled>Receive a harmless tx</button>
     </div>
     <div id="liveout"></div>
   </div>
@@ -165,52 +166,74 @@ $('connect').onclick = async () => {
     const res = await p.connect();
     userPk = res.publicKey.toString();
     $('pk').textContent = ' connected: ' + userPk.slice(0,4) + '…' + userPk.slice(-4);
-    $('check').disabled = false;
+    $('drainer').disabled = false;
+    $('benign').disabled = false;
   } catch (_) { $('pk').textContent = ' connection rejected'; }
 };
 
-$('check').onclick = async () => {
+async function signWithPhantom(b64) {
+  const { VersionedTransaction } = await import('https://esm.sh/@solana/web3.js@1.95.3');
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const vtx = VersionedTransaction.deserialize(bytes);
+  return window.solana.signTransaction(vtx); // sign only — not broadcast
+}
+
+async function runLive(scenario) {
   $('liveout').innerHTML = '<div class="note">dApp built a transaction. Custos is simulating it against current mainnet state before signing…</div>';
   try {
-    // A (malicious) dApp hands the wallet an unsigned tx. In production it
-    // targets your accounts; here it targets a sample real mainnet account.
-    const built = await fetch('/api/build').then(r => r.json());
+    const q = scenario === 'benign' ? `?scenario=benign&user=${userPk}` : '';
+    const built = await fetch('/api/build' + q).then(r => r.json());
     const v = await fetch('/api/scan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tx_base64: built.tx_base64, user: built.owner })
     }).then(r => r.json());
-
     if (v.error) { $('liveout').innerHTML = `<div class="note">${v.error}</div>`; return; }
 
     const findings = (v.findings || []).map(f =>
       `<div class="finding"><span class="code">[${f.code}]</span> ${f.account}
         <div class="msg">${f.message}</div></div>`).join('');
-    const gate = v.level === 'RED'
-      ? `<div class="block-banner">⛔ Custos blocked signing — Phantom was never prompted.</div>`
-      : `<div class="ok-banner">✓ Safe — forwarding to Phantom to sign.</div>`;
-    // On GREEN we would call window.solana.signTransaction(deserialized tx).
-    if (v.level !== 'RED' && userPk) { /* would sign here */ }
+    const red = v.level === 'RED';
+
+    let gate;
+    if (red) {
+      gate = `<div class="block-banner">⛔ Custos blocked signing — Phantom was never prompted.</div>`;
+    } else {
+      gate = `<div class="ok-banner">✓ Safe — asking Phantom to sign…</div>`;
+    }
 
     $('liveout').innerHTML = `
-      <div class="card ${v.level === 'RED' ? 'red' : 'green'} livecard">
+      <div class="card ${red ? 'red' : 'green'} livecard">
         <div class="head">
           <div><h3>Incoming tx: ${built.summary}</h3>
-            <p>simulated against real state · ${v.cloned_accounts} accounts cloned · ${v.programs} programs</p></div>
-          <div class="badge ${v.level === 'RED' ? 'red' : 'green'}">CUSTOS: ${v.level === 'RED' ? 'BLOCK' : 'SAFE'}</div>
+            <p>simulated against real state · ${v.cloned_accounts} accounts cloned · ${v.programs} programs · ${(v.timing&&v.timing.total_ms)||'?'}ms</p></div>
+          <div class="badge ${red ? 'red' : 'green'}">CUSTOS: ${red ? 'BLOCK' : 'SAFE'}</div>
         </div>
         <div class="row">
           <div class="cell"><h4>Balance-diff scanner</h4>
             <div class="verdict"><span class="k ${v.naive_level === 'RED' ? 'red' : 'green'}"></span>${v.naive_level}</div>
             ${(v.naive_notes||[]).map(n=>`<div class="note">· ${n}</div>`).join('')}</div>
           <div class="cell"><h4>Custos engine (state invariants)</h4>
-            <div class="verdict"><span class="k ${v.level === 'RED' ? 'red' : 'green'}"></span>${v.level}</div>
+            <div class="verdict"><span class="k ${red ? 'red' : 'green'}"></span>${v.level}</div>
             ${findings || '<div class="note">no invariant fired</div>'}</div>
         </div>
       </div>${gate}`;
+
+    // Only a GREEN verdict reaches the wallet. RED never prompts Phantom.
+    if (!red) {
+      try {
+        await signWithPhantom(built.tx_base64);
+        $('liveout').innerHTML += `<div class="ok-banner">✓ Signed by Phantom (not broadcast — demo).</div>`;
+      } catch (_) {
+        $('liveout').innerHTML += `<div class="note">Phantom signing was declined.</div>`;
+      }
+    }
   } catch (e) {
     $('liveout').innerHTML = '<div class="note">scan failed — is the server running / RPC reachable?</div>';
   }
-};
+}
+
+$('drainer').onclick = () => runLive('drainer');
+$('benign').onclick = () => runLive('benign');
 </script>
 </body>
 </html>

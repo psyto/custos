@@ -194,7 +194,14 @@ The page simulates each transaction and renders a wallet-style approval card wit
 panels — a balance-diff scanner and the Custos engine — plus a Block/Safe-to-sign
 control. The hidden-delegate and ownership-theft cards show balance-diff GREEN next to
 Custos RED. Verdicts come live from `GET /api/demo` (the engine's shared `scenarios`
-module). The signing flow is still mocked (no Phantom wallet-connect yet).
+module).
+
+The **Live pre-sign firewall** section wires Phantom end-to-end: connect the wallet,
+then receive either a drainer or a harmless tx. Custos runs `build → scan` and, on a
+**RED** verdict, blocks — Phantom is never prompted. On a **GREEN** verdict it
+deserializes the tx (`@solana/web3.js`) and calls `window.solana.signTransaction`. The
+`build`/`scan` backend is curl-verified on real data (benign → GREEN, drainer → RED);
+the in-browser Phantom signing is real code pending a browser+wallet verification.
 
 ### Stage 1 (in progress): engine core
 

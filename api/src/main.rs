@@ -30,6 +30,13 @@ async fn demo() -> Json<serde_json::Value> {
 /// Build an unsigned drainer tx targeting a real token account, as a malicious
 /// dApp would hand it to a connected wallet.
 async fn build(Query(q): Query<HashMap<String, String>>) -> Json<serde_json::Value> {
+    // scenario=benign builds a harmless tx payable by the connected wallet, so
+    // Phantom can actually sign it after a GREEN verdict. Default = drainer.
+    if q.get("scenario").map(|s| s.as_str()) == Some("benign") {
+        let user = q.get("user").or_else(|| q.get("owner")).cloned().unwrap_or_else(|| DEMO_OWNER.into());
+        return Json(json!({ "tx_base64": loader::build_benign_b64(&user), "account": "", "owner": user,
+            "summary": "a harmless memo — touches none of your accounts" }));
+    }
     let account = q.get("account").cloned().unwrap_or_else(|| DEMO_ATA.into());
     let owner = q.get("owner").or_else(|| q.get("user")).cloned().unwrap_or_else(|| DEMO_OWNER.into());
     let tx = loader::build_hidden_approve_b64(&account, &owner);

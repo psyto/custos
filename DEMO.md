@@ -65,10 +65,16 @@ says safe; Custos blocks it in a quarter second — before Phantom is ever asked
 Open `http://127.0.0.1:8787`.
 
 **Show:** the four approval cards (Custos: BLOCK vs balance-diff panel), then the
-**Live pre-sign firewall** section: *Connect Phantom → receive a "claim airdrop" tx →*
-Custos simulates and the RED banner says *"Signing blocked — Phantom was never prompted."*
+**Live pre-sign firewall** section:
 
-**Say:** "On a RED verdict the wallet is never even asked to sign."
+- *Connect Phantom.*
+- Click **"Receive a 'claim airdrop' tx (drainer)"** → RED banner: *"Signing blocked —
+  Phantom was never prompted."* (the wallet is never asked to sign.)
+- Click **"Receive a harmless tx"** → GREEN → Phantom pops up to sign → *"Signed by
+  Phantom (not broadcast)."*
+
+**Say:** "RED never reaches the wallet. GREEN goes straight to Phantom. Same engine,
+before you sign."
 
 ---
 

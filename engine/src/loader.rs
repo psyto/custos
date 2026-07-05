@@ -268,3 +268,17 @@ pub fn build_hidden_approve_b64(source_ata: &str, owner: &str) -> String {
     let vtx: VersionedTransaction = Transaction::new_unsigned(msg).into();
     base64::engine::general_purpose::STANDARD.encode(bincode::serialize(&vtx).unwrap())
 }
+
+/// Build an unsigned BENIGN tx (a harmless memo) payable by `user`, so a
+/// connected wallet can actually sign it after a GREEN verdict.
+pub fn build_benign_b64(user: &str) -> String {
+    use crate::spl;
+    use solana_message::Message;
+    use solana_transaction::Transaction;
+    let memo = Pubkey::from_str("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr").unwrap();
+    let user = Pubkey::from_str(user).unwrap();
+    let ixs = vec![spl::memo(memo, user, "gm — harmless memo, nothing touches your accounts")];
+    let msg = Message::new(&ixs, Some(&user));
+    let vtx: VersionedTransaction = Transaction::new_unsigned(msg).into();
+    base64::engine::general_purpose::STANDARD.encode(bincode::serialize(&vtx).unwrap())
+}
