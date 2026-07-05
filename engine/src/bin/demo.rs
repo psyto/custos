@@ -33,6 +33,7 @@ fn main() {
         println!("{}", if s.caught_gap { "  ⇒ Custos caught what balance-diff missed" } else { "  ⇒ agree" });
     }
     println!("\n────────────────────────────────────────────────────────");
-    println!("Scenarios 2 & 3 move ZERO balance in-tx, so a balance-diff scanner");
-    println!("passes them. Custos reads post-simulation STATE and stops both.");
+    println!("The drainer scenarios move ZERO balance in-tx, so a balance-diff scanner");
+    println!("passes them. Custos reads post-simulation STATE (F1-F5) and stops them —");
+    println!("including one hidden inside an unknown program's CPI.");
 }

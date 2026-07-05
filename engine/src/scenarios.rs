@@ -9,6 +9,7 @@ use base64::Engine as _;
 use litesvm::LiteSVM;
 use serde::Serialize;
 use solana_account::Account;
+use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_signer::Signer;
@@ -135,6 +136,28 @@ pub fn builtin() -> Vec<ScenarioReport> {
     out.push(build("ownership-theft", "Silent ownership theft",
         "Reassigns your token account's owner to the attacker; your balance never changes.", &mut e,
         vec![spl::set_authority(token, uata, ukey, 2, atk)]));
+
+    // 4. Routed through an unknown program that CPIs Approve internally — an
+    //    instruction parser sees only an opaque unknown-program call.
+    let mut e = fresh_env();
+    let (uata, atk, ukey, token) = (e.user_ata, e.attacker.pubkey(), e.user.pubkey(), e.token);
+    let proxy = Keypair::new().pubkey();
+    if let Ok(elf) = std::fs::read(art().join("proxy_approve.so")) {
+        e.svm.add_program(proxy, &elf).unwrap();
+        let proxy_ix = Instruction {
+            program_id: proxy,
+            accounts: vec![
+                AccountMeta::new(uata, false),
+                AccountMeta::new_readonly(atk, false),
+                AccountMeta::new_readonly(ukey, true),
+                AccountMeta::new_readonly(token, false),
+            ],
+            data: u64::MAX.to_le_bytes().to_vec(),
+        };
+        out.push(build("unknown-program", "Routed through an unknown program",
+            "The only visible instruction is an opaque call to an unknown program; it approves an unlimited delegate inside its own CPI.",
+            &mut e, vec![spl::memo(memo, ukey, "\u{1F381} Claim your ARDR airdrop"), proxy_ix]));
+    }
 
     out
 }

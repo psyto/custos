@@ -216,6 +216,82 @@ impl Invariant for F1Drain {
     }
 }
 
+/// F4 — a token account the user controls is closed / deallocated while it
+/// still held tokens (the "empty-then-close" rent-and-account grab; also any
+/// path that removes an account you own).
+pub struct F4AccountClose;
+impl Invariant for F4AccountClose {
+    fn code(&self) -> &'static str {
+        "F4-close"
+    }
+    fn check(&self, o: &Outcome) -> Vec<Finding> {
+        let mut f = vec![];
+        for pk in o.keys().cloned().collect::<Vec<_>>() {
+            let Some(pre) = o.pre_token(&pk) else { continue };
+            if pre.owner != o.user || pre.amount == 0 {
+                continue;
+            }
+            // Still the user's token account afterwards? If not, it was closed.
+            if o.post_token(&pk).is_none() {
+                f.push(Finding {
+                    level: Level::Red,
+                    code: self.code(),
+                    account: pk,
+                    message: format!("your token account was closed/deallocated while holding {} tokens", pre.amount),
+                });
+            }
+        }
+        f
+    }
+}
+
+/// Programs a firewall treats as known/verified. Anything else the tx invokes
+/// is surfaced as a caution (F5).
+const PROGRAM_ALLOWLIST: &[&str] = &[
+    "11111111111111111111111111111111",             // System
+    "ComputeBudget111111111111111111111111111111",  // ComputeBudget
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   // SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",   // Token-2022
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",  // Associated Token Account
+    "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",   // Memo v2
+    "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",   // Memo v1
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",   // Jupiter v6
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  // Raydium AMM v4
+    "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",  // Raydium CLMM
+    "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",   // Orca Whirlpool
+    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",   // Meteora DLMM
+    "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",   // Phoenix
+];
+
+/// F5 — the transaction invokes a program that isn't on the verified allowlist.
+/// A caution (not a block) on its own; the real drainer signal is usually the
+/// state change (F2/F3/F4) such a program produces.
+pub struct F5UnknownProgram;
+impl Invariant for F5UnknownProgram {
+    fn code(&self) -> &'static str {
+        "F5-unknown-program"
+    }
+    fn check(&self, o: &Outcome) -> Vec<Finding> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut f = vec![];
+        for l in &o.logs {
+            let Some(rest) = l.strip_prefix("Program ") else { continue };
+            let Some(idx) = rest.find(" invoke [") else { continue };
+            let id = &rest[..idx];
+            if !PROGRAM_ALLOWLIST.contains(&id) && seen.insert(id.to_string()) {
+                let pk = Pubkey::from_str(id).unwrap_or_default();
+                f.push(Finding {
+                    level: Level::Yellow,
+                    code: self.code(),
+                    account: pk,
+                    message: format!("interacts with an unverified program {}", short(&pk)),
+                });
+            }
+        }
+        f
+    }
+}
+
 #[derive(Debug)]
 pub struct Verdict {
     pub level: Level,
@@ -223,7 +299,13 @@ pub struct Verdict {
 }
 
 pub fn default_bank() -> Vec<Box<dyn Invariant>> {
-    vec![Box::new(F1Drain), Box::new(F2DelegateGrant), Box::new(F3AuthorityChange)]
+    vec![
+        Box::new(F1Drain),
+        Box::new(F2DelegateGrant),
+        Box::new(F3AuthorityChange),
+        Box::new(F4AccountClose),
+        Box::new(F5UnknownProgram),
+    ]
 }
 
 pub fn evaluate(o: &Outcome, bank: &[Box<dyn Invariant>]) -> Verdict {
@@ -327,6 +409,45 @@ mod tests {
         let same = token_bytes(&mint, &u, 1000, None, None);
         let o = outcome(u, pk, same.clone(), same);
         assert_eq!(evaluate(&o, &default_bank()).level, Level::Green);
+    }
+
+    #[test]
+    fn f4_fires_on_close_while_funded() {
+        let (u, mint, pk) = (user(), user(), user());
+        let tok = spl_token_id();
+        let pre = token_bytes(&mint, &u, 1000, None, None);
+        let o = Outcome {
+            user: u,
+            pre: BTreeMap::from([(pk, Some(AccountSnapshot { lamports: 2_039_280, owner: tok, data: pre }))]),
+            post: BTreeMap::from([(pk, None)]), // account closed / deallocated
+            logs: vec![],
+            success: true,
+            token_id: tok,
+            system_id: system_id(),
+        };
+        let v = evaluate(&o, &default_bank());
+        assert_eq!(v.level, Level::Red);
+        assert!(v.findings.iter().any(|f| f.code == "F4-close"));
+    }
+
+    #[test]
+    fn f5_flags_unknown_program_but_not_known() {
+        let tok = spl_token_id();
+        let mk = |id: &str| Outcome {
+            user: user(),
+            pre: BTreeMap::new(),
+            post: BTreeMap::new(),
+            logs: vec![format!("Program {id} invoke [1]")],
+            success: true,
+            token_id: tok,
+            system_id: system_id(),
+        };
+        let unknown = mk("9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin");
+        assert_eq!(evaluate(&unknown, &default_bank()).level, Level::Yellow);
+        assert!(evaluate(&unknown, &default_bank()).findings.iter().any(|f| f.code == "F5-unknown-program"));
+
+        let known = mk("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        assert_eq!(evaluate(&known, &default_bank()).level, Level::Green);
     }
 
     #[test]

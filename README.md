@@ -102,12 +102,17 @@ User-protective invariants that fire on the simulated post-state — protecting 
 | F2 | delegate/approval guard | `Approve`(unlimited) / `SetAuthority` grants an unknown delegate over the user's token account | RED |
 | F3 | ownership-change guard | an account the user owns changes owner | RED |
 | F4 | account-close guard | a user account is closed, balance to a third party | RED |
-| F5 | unknown-program CPI guard | CPI into a non-allowlisted program, esp. with authority ops | YELLOW→RED |
+| F5 | unknown-program CPI guard | tx invokes a program off the verified allowlist | YELLOW |
 | F6 | hidden-instruction guard | the UI-described action ≠ the instructions actually in the tx | RED |
 | F7 | CPI-reentrancy (from solinv) | anomalous CPI structure | YELLOW |
 | F8 | CU-anomaly (from solinv) | near compute-unit ceiling | INFO |
 
 F1–F6 are new (user-safety); F7–F8 are transferred from solinv (protocol-safety).
+**Implemented today: F1 (drain), F2 (delegate), F3 (authority), F4 (account-close),
+F5 (unknown-program)** — 6 unit tests. F5 stays silent on real DeFi (majors are
+allowlisted: System, Token/Token-2022, ATA, Memo, Jupiter, Raydium AMM+CLMM, Orca,
+Meteora, Phoenix), so benign real swaps remain GREEN. F6 needs a dApp-declared intent
+input and is deferred.
 
 ## Differentiation (honest)
 
@@ -137,7 +142,7 @@ custos/
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
 │   ├── src/scenarios.rs    #   shared built-in scenarios (demo + API)
-│   ├── src/bin/demo.rs     #   3 scenarios, one engine, vs balance-diff
+│   ├── src/bin/demo.rs     #   4 scenarios, one engine, vs balance-diff
 │   ├── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
 │   └── src/bin/live_red.rs #   LIVE RED: real account state × prospective drainer
 ├── api/                    # axum HTTP service over the engine
@@ -161,17 +166,21 @@ module). The signing flow is still mocked (no Phantom wallet-connect yet).
 ### Stage 1 (in progress): engine core
 
 `engine/` is the reusable core: `simulate → snapshot → invariants → verdict`.
-`cargo run --bin demo` (in `engine/`) runs three prospective transactions
+`cargo run --bin demo` (in `engine/`) runs four prospective transactions
 through the same engine beside a balance-diff-only scanner:
 
 ```
-Benign claim (memo)          balance-diff GREEN | Custos GREEN
-Hidden delegate (Approve MAX) balance-diff GREEN | Custos RED  (F2)
-Silent ownership theft (SetAuthority) balance-diff GREEN | Custos RED (F3)
+Benign claim (memo)                    balance-diff GREEN | Custos GREEN
+Hidden delegate (Approve MAX)          balance-diff GREEN | Custos RED  (F2)
+Silent ownership theft (SetAuthority)  balance-diff GREEN | Custos RED  (F3)
+Routed through an unknown program      balance-diff GREEN | Custos RED  (F2 + F5)
 ```
 
-The invariant bank (`F1Drain`, `F2DelegateGrant`, `F3AuthorityChange`) judges by
-post-simulation **state**, with unit tests.
+The invariant bank (`F1Drain`, `F2DelegateGrant`, `F3AuthorityChange`,
+`F4AccountClose`, `F5UnknownProgram`) judges by post-simulation **state**, with
+unit tests. The last scenario hides the `Approve` inside an unknown program's CPI —
+an instruction parser sees only an opaque call, but the engine reads the resulting
+delegate state (F2) and flags the unverified program (F5).
 
 **Live path** (`cargo run --bin scan -- <SIGNATURE>`): fetch a real mainnet tx,
 clone every touched account (ALT-resolved) + every invoked program into LiteSVM,
