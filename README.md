@@ -19,10 +19,41 @@ transaction.
 
 ---
 
-## Status: Stage 0 — technical gate GREEN
+## Quick start (≈30s)
 
-Custos is at the earliest stage: the load-bearing technical assumption has been
-validated, and no product exists yet.
+```bash
+# 1. See the engine catch drainers a balance-diff scanner misses (offline)
+cd engine && cargo run --bin demo
+
+# 2. The wallet-approval UI (three-panel comparison + Phantom intercept)
+cd api && cargo run          # → http://127.0.0.1:8787
+
+# 3. Scan a REAL mainnet transaction by signature
+cd engine && cargo run --bin scan -- <SIGNATURE>
+
+# 4. Real account × prospective drainer → RED on live state
+cd engine && cargo run --bin live_red
+```
+
+No config needed; a public RPC is the default (set `CUSTOS_RPC` for a faster one).
+See **[PITCH.md](./PITCH.md)** for the one-page case and **[DEMO.md](./DEMO.md)** for a
+guided walkthrough.
+
+---
+
+## Status: Stage 1 — engine + live firewall working
+
+The technical gate is GREEN and the engine now runs end-to-end: it scans real mainnet
+transactions, flags real prospective drainers (RED) while passing benign swaps (GREEN),
+and serves a wallet-approval UI. Five invariants (F1–F5) with unit tests; a pre-sign
+`/api/scan` endpoint; measured warm latency ~235 ms. Below is how it got here.
+
+### Gate history (Stage 0)
+
+The gate answered one question: **can a local VM (LiteSVM) load an *arbitrary*
+mainnet program, clone a *real* mainnet account, execute a transaction against them,
+and observe the outcome (logs, compute units, pre/post state)?** If not, the whole
+"simulate before signing" premise is dead.
 
 The gate answered one question: **can a local VM (LiteSVM) load an *arbitrary*
 mainnet program, clone a *real* mainnet account, execute a transaction against them,
