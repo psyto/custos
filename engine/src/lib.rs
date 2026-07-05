@@ -22,6 +22,9 @@ pub mod sim;
 pub fn spl_token_id() -> Pubkey {
     Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap()
 }
+pub fn token2022_id() -> Pubkey {
+    Pubkey::from_str("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb").unwrap()
+}
 pub fn system_id() -> Pubkey {
     Pubkey::from_str("11111111111111111111111111111111").unwrap()
 }
@@ -46,10 +49,17 @@ pub struct TokenAccount {
 }
 
 impl TokenAccount {
-    /// Parse a 165-byte SPL Token account owned by the token program.
-    pub fn parse(s: &AccountSnapshot, token_id: &Pubkey) -> Option<TokenAccount> {
-        if s.owner != *token_id || s.data.len() != 165 {
+    /// Parse an SPL Token or Token-2022 account. The base 165-byte layout is
+    /// identical for both; Token-2022 accounts may carry TLV extensions past
+    /// byte 165 (with an account-type byte == 2 at offset 165, which we use to
+    /// avoid mis-parsing a Token-2022 mint as an account).
+    pub fn parse(s: &AccountSnapshot) -> Option<TokenAccount> {
+        let is_token = s.owner == spl_token_id() || s.owner == token2022_id();
+        if !is_token || s.data.len() < 165 {
             return None;
+        }
+        if s.data.len() > 165 && s.data.get(165) != Some(&2) {
+            return None; // Token-2022 mint or non-account TLV blob
         }
         let d = &s.data;
         let coption = |tag_off: usize| -> Option<Pubkey> {
@@ -88,10 +98,10 @@ impl Outcome {
         self.pre.keys().chain(self.post.keys().filter(move |k| !self.pre.contains_key(*k)))
     }
     fn pre_token(&self, pk: &Pubkey) -> Option<TokenAccount> {
-        self.pre.get(pk).and_then(|o| o.as_ref()).and_then(|s| TokenAccount::parse(s, &self.token_id))
+        self.pre.get(pk).and_then(|o| o.as_ref()).and_then(TokenAccount::parse)
     }
     fn post_token(&self, pk: &Pubkey) -> Option<TokenAccount> {
-        self.post.get(pk).and_then(|o| o.as_ref()).and_then(|s| TokenAccount::parse(s, &self.token_id))
+        self.post.get(pk).and_then(|o| o.as_ref()).and_then(TokenAccount::parse)
     }
 }
 
@@ -177,13 +187,15 @@ impl Invariant for F3AuthorityChange {
                     message: format!("ownership of your token account transferred to {}", short(&post.owner)),
                 });
             }
-            if post.close_authority.is_some() && post.close_authority != pre.close_authority && post.close_authority != Some(o.user) {
-                f.push(Finding {
-                    level: Level::Red,
-                    code: self.code(),
-                    account: pk,
-                    message: format!("close-authority granted to {} (can close and sweep the account)", short(&post.close_authority.unwrap())),
-                });
+            if let Some(ca) = post.close_authority {
+                if post.close_authority != pre.close_authority && ca != o.user {
+                    f.push(Finding {
+                        level: Level::Red,
+                        code: self.code(),
+                        account: pk,
+                        message: format!("close-authority granted to {} (can close and sweep the account)", short(&ca)),
+                    });
+                }
             }
         }
         f
@@ -448,6 +460,39 @@ mod tests {
 
         let known = mk("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
         assert_eq!(evaluate(&known, &default_bank()).level, Level::Green);
+    }
+
+    #[test]
+    fn f2_fires_on_token2022_account() {
+        let (u, mint, atk, pk) = (user(), user(), user(), user());
+        let t22 = token2022_id();
+        let snap = |data| Some(AccountSnapshot { lamports: 2_039_280, owner: t22, data });
+        let o = Outcome {
+            user: u,
+            pre: BTreeMap::from([(pk, snap(token_bytes(&mint, &u, 1000, None, None)))]),
+            post: BTreeMap::from([(pk, snap(token_bytes(&mint, &u, 1000, Some((&atk, u64::MAX)), None)))]),
+            logs: vec![],
+            success: true,
+            token_id: spl_token_id(),
+            system_id: system_id(),
+        };
+        let v = evaluate(&o, &default_bank());
+        assert_eq!(v.level, Level::Red);
+        assert!(v.findings.iter().any(|f| f.code == "F2-delegate"));
+    }
+
+    #[test]
+    fn token2022_mint_not_parsed_as_account() {
+        let t22 = token2022_id();
+        // extensions present, type byte = Mint(1) → must NOT parse as an account
+        let mut mint = vec![0u8; 170];
+        mint[165] = 1;
+        assert!(TokenAccount::parse(&AccountSnapshot { lamports: 1, owner: t22, data: mint }).is_none());
+        // extensions present, type byte = Account(2) → parses
+        let mut acct = vec![0u8; 170];
+        acct[108] = 1;
+        acct[165] = 2;
+        assert!(TokenAccount::parse(&AccountSnapshot { lamports: 1, owner: t22, data: acct }).is_some());
     }
 
     #[test]

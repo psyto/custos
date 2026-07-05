@@ -140,7 +140,9 @@ User-protective invariants that fire on the simulated post-state — protecting 
 
 F1–F6 are new (user-safety); F7–F8 are transferred from solinv (protocol-safety).
 **Implemented today: F1 (drain), F2 (delegate), F3 (authority), F4 (account-close),
-F5 (unknown-program)** — 6 unit tests. F5 stays silent on real DeFi (majors are
+F5 (unknown-program)** — 8 unit tests, and they cover **both SPL Token and Token-2022**
+accounts (drainers increasingly use Token-2022; the base layout is shared and mints are
+disambiguated by the account-type byte). F5 stays silent on real DeFi (majors are
 allowlisted: System, Token/Token-2022, ATA, Memo, Jupiter, Raydium AMM+CLMM, Orca,
 Meteora, Phoenix), so benign real swaps remain GREEN. F6 needs a dApp-declared intent
 input and is deferred.
