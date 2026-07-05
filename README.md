@@ -179,6 +179,21 @@ simulate, and run the bank — emitting a `verdict_json`. Verified end-to-end on
 Jupiter swaps (e.g. 54 accounts / 8 programs), correctly GREEN on benign swaps with
 no false findings even when historical replay reverts on stale price.
 
+**Latency** (`cargo run --bin profile`): a scan is timed by phase, cold vs warm, with
+an in-process program-ELF cache. Measured on a real Jupiter swap (4 programs incl.
+Jupiter 2.9 MB + Raydium CLMM 1.7 MB) over the public RPC:
+
+```
+COLD (first sight, CLI dump) : 1161 ms  = resolve 35 + accounts 102 + programs 992 + sim 4
+WARM (programs cached)       :  235 ms  = resolve 31 + accounts  89 + programs  87 + sim 3
+```
+
+Programs are static, so their ~1 s acquisition is a one-time cost — a service
+pre-warms the top ~50 DeFi programs and nearly every real scan is WARM (~235 ms, well
+under a signing-UX budget). The only live-bound term is account state (~89 ms here),
+which drops further on a dedicated RPC (Helius/Triton). This quantifies the "programs
+cacheable; only account state is live" thesis the design leaned on.
+
 **Live RED** (`cargo run --bin live_red`): the product's true mode — clone a *real*
 on-chain USDC token account (current state) and simulate a *prospective* drainer
 (memo "claim" + hidden `Approve(u64::MAX)`). On real account state the engine returns

@@ -21,6 +21,10 @@ path = "src/bin/scan.rs"
 name = "live_red"
 path = "src/bin/live_red.rs"
 
+[[bin]]
+name = "profile"
+path = "src/bin/profile.rs"
+
 [dependencies]
 litesvm = "0.13"
 bincode = "1"
