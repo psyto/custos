@@ -36,8 +36,9 @@ cd engine && cargo run --bin live_red
 ```
 
 No config needed; a public RPC is the default (set `CUSTOS_RPC` for a faster one).
-See **[PITCH.md](./PITCH.md)** for the one-page case and **[DEMO.md](./DEMO.md)** for a
-guided walkthrough.
+See **[PITCH.md](./PITCH.md)** for the one-page case, **[DEMO.md](./DEMO.md)** for a
+guided walkthrough, and **[SUBMISSION.md](./SUBMISSION.md)** for the full story +
+evidence ledger.
 
 ---
 
