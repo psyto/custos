@@ -153,8 +153,12 @@ pub fn fetch_wire_b64(sig: &str, rpc_url: &str) -> String {
     b["transaction"][0].as_str().expect("tx not found").to_string()
 }
 
-/// Scan an unsigned base64 wire transaction and return a verdict.
-pub fn scan_b64(tx_b64: &str, user_override: Option<&str>, rpc_url: &str) -> ScanReport {
+/// Simulate a tx and return BOTH the summary `ScanReport` and the raw `Outcome`
+/// (pre/post account snapshots). Callers that need post-state token balances the summary omits —
+/// e.g. an escrow's output-token delta for a re-execution attestor — read them from
+/// `outcome.pre`/`outcome.post` via `crate::TokenAccount::parse`. State is cloned at the CURRENT
+/// slot (getMultipleAccounts); pinning to a historical slot needs archival state fetch (follow-up).
+pub fn simulate_b64(tx_b64: &str, user_override: Option<&str>, rpc_url: &str) -> (ScanReport, crate::Outcome) {
     let t_total = Instant::now();
     let wire = base64::engine::general_purpose::STANDARD.decode(tx_b64.trim()).expect("base64 tx");
     let vtx: VersionedTransaction = bincode::deserialize(&wire).expect("deserialize tx");
@@ -220,7 +224,7 @@ pub fn scan_b64(tx_b64: &str, user_override: Option<&str>, rpc_url: &str) -> Sca
     let Verdict { level, findings } = evaluate(&outcome, &default_bank());
     let sim_ms = t.elapsed().as_millis();
 
-    ScanReport {
+    let report = ScanReport {
         user: user.to_string(),
         simulated: outcome.success,
         level: level_str(level).into(),
@@ -245,7 +249,13 @@ pub fn scan_b64(tx_b64: &str, user_override: Option<&str>, rpc_url: &str) -> Sca
             program_cache_hits: hits,
             program_cache_misses: misses,
         },
-    }
+    };
+    (report, outcome)
+}
+
+/// Backward-compatible entry: returns only the summary verdict (delegates to `simulate_b64`).
+pub fn scan_b64(tx_b64: &str, user_override: Option<&str>, rpc_url: &str) -> ScanReport {
+    simulate_b64(tx_b64, user_override, rpc_url).0
 }
 
 /// Build an unsigned "hidden delegate" tx (memo + Approve u64::MAX) targeting a
