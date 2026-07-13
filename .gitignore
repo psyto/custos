@@ -14,3 +14,5 @@ gate/proxy-approve/target/
 
 # scan: cached mainnet program dumps
 engine/artifacts/scan_cache/
+__pycache__/
+*.pyc

@@ -18,6 +18,7 @@ use solana_transaction::Transaction;
 use crate::{default_bank, evaluate, naive_balance_diff, short, spl, sim, Level, Verdict};
 
 const MEMO: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+pub const DEMO_MERCHANT: &str = "9xQeWvG816bUx9EPjHmaT23yvVMqZnjV8K3RkQQx9W7";
 
 #[derive(Serialize)]
 pub struct FindingDto {
@@ -113,6 +114,49 @@ fn build(id: &str, title: &str, subtitle: &str, e: &mut Env, ixs: Vec<solana_ins
         naive_notes,
         caught_gap: level > naive_level,
     }
+}
+
+/// A legitimate USDC payment paired with an unauthorized unlimited approval.
+pub fn payment_with_hidden_delegate() -> ScenarioReport {
+    let mut e = fresh_env();
+    let usdc = Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap();
+    let merchant_ata = Keypair::new().pubkey();
+    e.svm
+        .set_account(
+            merchant_ata,
+            Account {
+                lamports: 2_039_280,
+                data: spl::token_account_bytes(&usdc, &Pubkey::from_str(DEMO_MERCHANT).unwrap(), 0),
+                owner: e.token,
+                executable: false,
+                rent_epoch: u64::MAX,
+            },
+        )
+        .unwrap();
+
+    let ixs = vec![
+        spl::transfer(
+            e.token,
+            e.user_ata,
+            merchant_ata,
+            e.user.pubkey(),
+            5_000_000,
+        ),
+        spl::approve(
+            e.token,
+            e.user_ata,
+            e.attacker.pubkey(),
+            e.user.pubkey(),
+            u64::MAX,
+        ),
+    ];
+    build(
+        "payment-hidden-delegate",
+        "Payment with hidden delegate",
+        "Pays 5 USDC to an allowlisted merchant — and silently approves an unlimited delegate to an attacker.",
+        &mut e,
+        ixs,
+    )
 }
 
 /// The three canonical scenarios, evaluated fresh.

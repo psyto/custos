@@ -14,6 +14,10 @@ name = "demo"
 path = "src/bin/demo.rs"
 
 [[bin]]
+name = "agent_demo"
+path = "src/bin/agent_demo.rs"
+
+[[bin]]
 name = "scan"
 path = "src/bin/scan.rs"
 
