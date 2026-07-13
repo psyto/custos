@@ -1,0 +1,11 @@
+{
+  "name": "custos-demo-video",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": { "record": "node record.js" },
+  "dependencies": {
+    "puppeteer": "^19.0.0",
+    "puppeteer-screen-recorder": "^3.0.6"
+  }
+}
