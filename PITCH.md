@@ -59,10 +59,23 @@ F4 account-close · F5 unknown-program. (5, with unit tests.)
 - The Phantom signing flow is real code but not yet browser-verified; the pre-sign
   `build → scan → verdict` backend is curl-verified on real accounts.
 
+## For AI agents & solvers
+
+The same engine guards **autonomous** payments, where no human is there to catch a bad
+approval. An *authorization* policy (amount ≤ limit, destination allowlisted) checks what
+the agent **declares**; Custos re-executes what the transaction **does** and blocks the
+gap. Runnable: `cargo run --bin agent_demo` (authorization PASS vs Custos RED on one tx)
+and `python3 scripts/solver_gate.py` (the gate over `/api/scan`). North-star: **F6 /
+intent-conformance** — *the tx does only what the agent declared* — tractable here
+because the agent's own policy layer supplies a trustworthy declared intent (unlike an
+untrusted dApp). Honest scope: today Custos blocks structural drains (F1–F5); a hidden
+*partial* transfer to an attacker is the next invariant, not a claim made today.
+
 ## Ask / next
 
-Design partners (wallets, dApps) to embed the pre-sign `/api/scan` check; and a dedicated
-RPC to drive live-state latency below 100 ms.
+Design partners — **solvers** wanting a pre-broadcast gate (white-label), and
+wallets/dApps — to embed the `/api/scan` check; and a dedicated RPC to drive live-state
+latency below 100 ms.
 
 *Repo: [`psyto/custos`](https://github.com/psyto/custos). Built on the LiteSVM/invariant
 substrate from [`psyto/solinv`](https://github.com/psyto/solinv).*

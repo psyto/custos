@@ -91,6 +91,37 @@ cargo run --bin profile                                        # → cold vs war
 
 ---
 
+## 5. Agent / solver gate (45s) — no human in the loop
+
+**Say:** "Same engine, one layer up — for an AI agent that pays on its own, with nobody
+watching."
+
+```bash
+# authorization PASS vs Custos BLOCK on the SAME transaction (offline, deterministic)
+cd engine && cargo run --bin agent_demo
+```
+
+**Show:** the **HERO** block — a real authorization policy (amount ≤ limit, destination
+allowlisted) returns **PASS** on a 5 USDC payment to an allowlisted merchant; that same
+tx also hides an unlimited `Approve`; Custos returns **RED (F2)** → *REFUSE TO
+BROADCAST*. The 5 USDC transfer raises no finding (it matches the declared payment) — the
+RED is driven purely by the hidden delegate.
+
+```bash
+# the same gate as a solver wires it — over the live HTTP API
+cd api && cargo run          # if not already running (step 2)
+python3 scripts/solver_gate.py
+```
+
+**Show:** `Authorization policy (declared intent): PASS` → `Custos verification (actual
+tx): RED` → `Decision: REFUSE TO BROADCAST — principal capital preserved`.
+
+**Say:** "Authorization checks what the agent *declared*; Custos re-executes what the
+transaction *does*. Put it on the one road before broadcast, and a compromised agent
+can't drain the desk."
+
+---
+
 ## Closing line
 
 "Signature scanners catch yesterday's scams. Custos simulates your next transaction and

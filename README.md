@@ -17,6 +17,14 @@ framework with a 168K-execution mainnet calibration record). solinv points that
 engine at a protocol's fuzz campaign; Custos points the same engine at your next
 transaction.
 
+**Two callers, one engine.** The same check guards the moment *before an action
+commits* — whether a **human** is about to sign in their wallet, or an **autonomous
+agent / solver** is about to broadcast on its own, with no human in the loop. For an
+agent, a Kova-style authorization policy (amount ≤ limit, destination allowlisted) only
+sees the payment the agent *declares*; Custos re-executes the *actual* transaction and
+blocks what authorization can't see. See
+[For AI agents & solvers](#for-ai-agents--solvers-pre-broadcast-gate).
+
 ---
 
 ## Quick start (≈30s)
@@ -33,12 +41,57 @@ cd engine && cargo run --bin scan -- <SIGNATURE>
 
 # 4. Real account × prospective drainer → RED on live state
 cd engine && cargo run --bin live_red
+
+# 5. AGENT/SOLVER framing: authorization PASS vs Custos BLOCK on the SAME tx (offline)
+cd engine && cargo run --bin agent_demo
+
+# 6. Solver pre-broadcast gate over the live HTTP API (start the api, step 2, first)
+python3 scripts/solver_gate.py
 ```
 
 No config needed; a public RPC is the default (set `CUSTOS_RPC` for a faster one).
 See **[PITCH.md](./PITCH.md)** for the one-page case, **[DEMO.md](./DEMO.md)** for a
 guided walkthrough, and **[SUBMISSION.md](./SUBMISSION.md)** for the full story +
 evidence ledger.
+
+---
+
+## For AI agents & solvers (pre-broadcast gate)
+
+AI agents now hold wallets and pay on their own — over x402 / MPP, through agent
+wallets, inside solver pipelines. There is **no human to catch a bad approval**. The
+usual guard is an *authorization* policy (amount ≤ limit, destination allowlisted) — but
+authorization only sees the action the agent *declares*; it is blind to what the raw
+transaction actually does. That is the Custos gap, one layer up:
+
+> **Authorization** asks *is this payment allowed?*  ·  **Custos** asks *does this
+> transaction do only that — and nothing else?*
+
+Put Custos on the one road every payment must travel (the solver's pre-broadcast step,
+or the wallet's signer): the agent runs automatically, but each transaction is
+re-executed and RED ones never broadcast. Two runnable demos:
+
+- **`cd engine && cargo run --bin agent_demo`** — a *real* declared-intent authorization
+  policy PASSES a 5 USDC payment to an allowlisted merchant; the **same** transaction
+  also hides an unlimited `Approve`; Custos re-executes and returns **RED (F2)** →
+  *refuse to broadcast*. Authorization ≠ verification, proven on one transaction.
+- **`python3 scripts/solver_gate.py`** — the same gate over the live HTTP API
+  (`build → scan → refuse-to-broadcast`), the shape a solver actually integrates.
+
+**Honest coverage (what blocks today).** Custos fires on the *structural* drains: F1
+full-drain (balance → 0), F2 delegate/approval, F3 authority change, F4 account close,
+F5 unknown program. A hidden **partial** transfer to an attacker — one that does *not*
+empty the account — is **not** caught by these invariants, and it also slips past a
+declared-intent authorization policy. Closing that is the next invariant, not a claim
+made today.
+
+**North-star — F6 / intent-conformance.** The complete answer is F6: *the transaction
+does only what was declared, nothing more* — which subsumes F1–F5 (a hidden delegate,
+authority grab, or extra transfer are all "beyond the declared intent"). F6 needs a
+trustworthy declared-intent input. For a consumer that input is an untrusted dApp's
+word; for an **agent** it is the agent's own policy layer — trustworthy by construction
+— which is exactly why intent-conformance is the killer feature for this lane, and the
+wedge this repositioning aims at.
 
 ---
 
@@ -50,11 +103,6 @@ and serves a wallet-approval UI. Five invariants (F1–F5) with unit tests; a pr
 `/api/scan` endpoint; measured warm latency ~235 ms. Below is how it got here.
 
 ### Gate history (Stage 0)
-
-The gate answered one question: **can a local VM (LiteSVM) load an *arbitrary*
-mainnet program, clone a *real* mainnet account, execute a transaction against them,
-and observe the outcome (logs, compute units, pre/post state)?** If not, the whole
-"simulate before signing" premise is dead.
 
 The gate answered one question: **can a local VM (LiteSVM) load an *arbitrary*
 mainnet program, clone a *real* mainnet account, execute a transaction against them,
@@ -145,8 +193,11 @@ F5 (unknown-program)** — 8 unit tests, and they cover **both SPL Token and Tok
 accounts (drainers increasingly use Token-2022; the base layout is shared and mints are
 disambiguated by the account-type byte). F5 stays silent on real DeFi (majors are
 allowlisted: System, Token/Token-2022, ATA, Memo, Jupiter, Raydium AMM+CLMM, Orca,
-Meteora, Phoenix), so benign real swaps remain GREEN. F6 needs a dApp-declared intent
-input and is deferred.
+Meteora, Phoenix), so benign real swaps remain GREEN. F6 needs a declared-intent
+input and is deferred — but it is the **killer invariant for the agent / solver lane**:
+an autonomous agent's own policy layer *declares* its intent (trustworthy by
+construction, unlike a phishing dApp's word), so F6 becomes *does the transaction do
+only what the agent declared?* — full intent-conformance.
 
 ## Differentiation (honest)
 
@@ -176,13 +227,16 @@ custos/
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
 │   ├── src/scenarios.rs    #   shared built-in scenarios (demo + API)
-│   ├── src/bin/demo.rs     #   4 scenarios, one engine, vs balance-diff
-│   ├── src/bin/scan.rs     #   LIVE path: scan a real mainnet tx by signature
-│   └── src/bin/live_red.rs #   LIVE RED: real account state × prospective drainer
+│   ├── src/bin/demo.rs       #   4 scenarios, one engine, vs balance-diff
+│   ├── src/bin/agent_demo.rs #   agent/solver: authorization vs Custos (payment+hidden-delegate hero)
+│   ├── src/bin/scan.rs       #   LIVE path: scan a real mainnet tx by signature
+│   └── src/bin/live_red.rs   #   LIVE RED: real account state × prospective drainer
 ├── api/                    # axum HTTP service over the engine
 │   └── src/main.rs         #   GET /api/demo (verdicts) + GET / (UI)
-└── web/
-    └── index.html          # wallet-approval UI (balance-diff vs Custos panels)
+├── web/
+│   └── index.html          # wallet-approval UI (balance-diff vs Custos panels)
+└── scripts/
+    └── solver_gate.py      # solver pre-broadcast gate over the live /api/scan
 ```
 
 ### Wallet UI
