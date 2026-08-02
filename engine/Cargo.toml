@@ -14,6 +14,10 @@ name = "demo"
 path = "src/bin/demo.rs"
 
 [[bin]]
+name = "mandate_demo"
+path = "src/bin/mandate_demo.rs"
+
+[[bin]]
 name = "agent_demo"
 path = "src/bin/agent_demo.rs"
 
@@ -43,5 +47,6 @@ solana-transaction = "3"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reexec-spec = { path = "../../probatio-svm/crates/reexec-spec" }
 
 [workspace]

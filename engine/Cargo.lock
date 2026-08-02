@@ -816,6 +816,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "litesvm",
+ "reexec-spec",
  "serde",
  "serde_json",
  "solana-account",
@@ -2049,6 +2050,10 @@ checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "reexec-spec"
+version = "0.1.0"
 
 [[package]]
 name = "rfc6979"

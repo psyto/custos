@@ -127,6 +127,54 @@ pub trait Invariant {
     fn check(&self, o: &Outcome) -> Vec<Finding>;
 }
 
+/// M1 — realized token value leaving the user's accounts must remain within
+/// the shared, authored mandate. This is deliberately separate from F1-F5:
+/// approvals and authority changes move no value in the current transaction.
+pub struct MandateConformance {
+    pub mandate: reexec_spec::MandateSpec,
+}
+
+impl Invariant for MandateConformance {
+    fn code(&self) -> &'static str {
+        "M1-mandate"
+    }
+
+    fn check(&self, o: &Outcome) -> Vec<Finding> {
+        let mut outflows: BTreeMap<Pubkey, (u64, Pubkey)> = BTreeMap::new();
+
+        for pk in o.keys().cloned().collect::<Vec<_>>() {
+            let Some(pre) = o.pre_token(&pk) else { continue };
+            if pre.owner != o.user {
+                continue;
+            }
+
+            let post_amount = o.post_token(&pk).map(|post| post.amount).unwrap_or(0);
+            let outflow = pre.amount.saturating_sub(post_amount);
+            if outflow == 0 {
+                continue;
+            }
+
+            let entry = outflows.entry(pre.mint).or_insert((0, pk));
+            entry.0 = entry.0.saturating_add(outflow);
+        }
+
+        outflows
+            .into_iter()
+            .filter_map(|(mint, (outflow, account))| {
+                (outflow > self.mandate.max_value_out).then(|| Finding {
+                    level: Level::Red,
+                    code: self.code(),
+                    account,
+                    message: format!(
+                        "moves {outflow} of {mint} out of your accounts; authored mandate allows at most {}",
+                        self.mandate.max_value_out,
+                    ),
+                })
+            })
+            .collect()
+    }
+}
+
 /// F2 — a token account the user controls gains (or increases) a delegate.
 /// Delegation moves no funds in-tx but grants future control (drainer pattern).
 pub struct F2DelegateGrant;
@@ -320,6 +368,13 @@ pub fn default_bank() -> Vec<Box<dyn Invariant>> {
     ]
 }
 
+/// The normal malice-tier checks plus a shared, authored spend mandate.
+pub fn bank_with_mandate(mandate: reexec_spec::MandateSpec) -> Vec<Box<dyn Invariant>> {
+    let mut b = default_bank();
+    b.push(Box::new(MandateConformance { mandate }));
+    b
+}
+
 pub fn evaluate(o: &Outcome, bank: &[Box<dyn Invariant>]) -> Verdict {
     let mut findings = vec![];
     for inv in bank {
@@ -502,5 +557,105 @@ mod tests {
         let post = token_bytes(&mint, &u, 1000, Some((&u, 500)), None);
         let o = outcome(u, pk, pre, post);
         assert_eq!(evaluate(&o, &default_bank()).level, Level::Green);
+    }
+
+    fn mandate(max_value_out: u64) -> reexec_spec::MandateSpec {
+        reexec_spec::MandateSpec {
+            max_size: reexec_spec::MAX_MANDATE_SIZE,
+            instrument: reexec_spec::MANDATE_INSTRUMENT,
+            max_value_out,
+        }
+    }
+
+    #[test]
+    fn m1_flags_outflow_above_authored_limit_but_allows_below_it() {
+        let (u, mint, pk) = (user(), user(), user());
+        let o = outcome(
+            u,
+            pk,
+            token_bytes(&mint, &u, 1_000, None, None),
+            token_bytes(&mint, &u, 200, None, None),
+        );
+
+        let red = evaluate(&o, &bank_with_mandate(mandate(500)));
+        assert_eq!(red.level, Level::Red);
+        assert!(red.findings.iter().any(|f| f.code == "M1-mandate"));
+
+        let allowed = evaluate(&o, &bank_with_mandate(mandate(900)));
+        assert!(!allowed.findings.iter().any(|f| f.code == "M1-mandate"));
+    }
+
+    #[test]
+    fn m1_sums_outflow_across_user_accounts_of_the_same_mint() {
+        let (u, mint, first, second) = (user(), user(), user(), user());
+        let tok = spl_token_id();
+        let snap = |data| Some(AccountSnapshot { lamports: 2_039_280, owner: tok, data });
+        let o = Outcome {
+            user: u,
+            pre: BTreeMap::from([
+                (first, snap(token_bytes(&mint, &u, 400, None, None))),
+                (second, snap(token_bytes(&mint, &u, 400, None, None))),
+            ]),
+            post: BTreeMap::from([
+                (first, snap(token_bytes(&mint, &u, 100, None, None))),
+                (second, snap(token_bytes(&mint, &u, 300, None, None))),
+            ]),
+            logs: vec![],
+            success: true,
+            token_id: tok,
+            system_id: system_id(),
+        };
+
+        let verdict = evaluate(&o, &bank_with_mandate(mandate(350)));
+        let finding = verdict.findings.iter().find(|f| f.code == "M1-mandate").unwrap();
+        assert!(finding.message.contains("moves 400"));
+    }
+
+    #[test]
+    fn m1_ignores_delegate_only_transaction() {
+        let (u, mint, delegate, pk) = (user(), user(), user(), user());
+        let o = outcome(
+            u,
+            pk,
+            token_bytes(&mint, &u, 1_000, None, None),
+            token_bytes(&mint, &u, 1_000, Some((&delegate, u64::MAX)), None),
+        );
+
+        let verdict = evaluate(&o, &bank_with_mandate(mandate(0)));
+        assert!(!verdict.findings.iter().any(|f| f.code == "M1-mandate"));
+        assert!(verdict.findings.iter().any(|f| f.code == "F2-delegate"));
+    }
+
+    #[test]
+    fn m1_counts_a_closed_funded_account_as_full_outflow() {
+        let (u, mint, pk) = (user(), user(), user());
+        let tok = spl_token_id();
+        let pre = token_bytes(&mint, &u, 1_000, None, None);
+        let o = Outcome {
+            user: u,
+            pre: BTreeMap::from([(pk, Some(AccountSnapshot { lamports: 2_039_280, owner: tok, data: pre }))]),
+            post: BTreeMap::from([(pk, None)]),
+            logs: vec![],
+            success: true,
+            token_id: tok,
+            system_id: system_id(),
+        };
+
+        let verdict = evaluate(&o, &bank_with_mandate(mandate(999)));
+        assert!(verdict.findings.iter().any(|f| f.code == "M1-mandate"));
+    }
+
+    #[test]
+    fn m1_stage0_default_is_inert() {
+        let (u, mint, pk) = (user(), user(), user());
+        let o = outcome(
+            u,
+            pk,
+            token_bytes(&mint, &u, u64::MAX, None, None),
+            token_bytes(&mint, &u, 0, None, None),
+        );
+
+        let verdict = evaluate(&o, &bank_with_mandate(reexec_spec::MandateSpec::stage0_default()));
+        assert!(!verdict.findings.iter().any(|f| f.code == "M1-mandate"));
     }
 }
