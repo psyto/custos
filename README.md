@@ -93,13 +93,36 @@ word; for an **agent** it is the agent's own policy layer — trustworthy by con
 — which is exactly why intent-conformance is the killer feature for this lane, and the
 wedge this repositioning aims at.
 
+### Authored-mandate conformance (M1) — the screen station of a shared mandate
+
+Beyond the F1–F6 *malice* tier (what a tx does to you, regardless of intent), Custos enforces an
+**authored spend mandate** shared with its sibling
+[Probatio](https://github.com/psyto/probatio-svm). Both read the *same* `MandateSpec` from the
+dependency-free [`reexec-spec`](https://github.com/psyto/probatio-svm/tree/master/crates/reexec-spec)
+crate: **Probatio certifies** an agent's episode against `max_size` / `instrument`; **Custos screens**
+the next transaction against **`max_value_out`**. The `MandateConformance` invariant (`M1-mandate`) fires
+**RED** when the realized token outflow from your accounts — summed per mint — exceeds the authored
+`max_value_out`, so even a *tricked* agent cannot move more than its mandate allows (the Grok/Bankr
+prompt-injection drain class). It is deliberately separate from F1–F6: a delegate/authority change moves
+no value, so M1 stays silent there (that is F2/F3's job) — M1 measures realized value-out.
+
+`bank_with_mandate(spec)` = the malice bank plus M1; `default_bank()` stays malice-only and
+`stage0_default()` leaves the cap off, so nothing regresses. One spec, authored once, checked at certify
+time (Probatio) and pre-broadcast (Custos):
+
+```bash
+cd engine && cargo run --bin mandate_demo
+#   same 800-token payment →  default bank: Green   |   authored max_value_out=500: Red  [M1-mandate]
+```
+
 ---
 
 ## Status: Stage 1 — engine + live firewall working
 
 The technical gate is GREEN and the engine now runs end-to-end: it scans real mainnet
 transactions, flags real prospective drainers (RED) while passing benign swaps (GREEN),
-and serves a wallet-approval UI. Five invariants (F1–F5) with unit tests; a pre-sign
+and serves a wallet-approval UI. Five malice invariants (F1–F5) plus the authored-mandate **M1**
+(the screen station of the `reexec-spec` mandate shared with Probatio), with unit tests; a pre-sign
 `/api/scan` endpoint; measured warm latency ~235 ms. Below is how it got here.
 
 ### Gate history (Stage 0)
@@ -186,10 +209,13 @@ User-protective invariants that fire on the simulated post-state — protecting 
 | F6 | hidden-instruction guard | the UI-described action ≠ the instructions actually in the tx | RED |
 | F7 | CPI-reentrancy (from solinv) | anomalous CPI structure | YELLOW |
 | F8 | CU-anomaly (from solinv) | near compute-unit ceiling | INFO |
+| **M1** | **mandate-conformance** *(authored tier — shared with Probatio)* | realized per-mint token outflow from your accounts exceeds the authored `max_value_out` | RED |
 
-F1–F6 are new (user-safety); F7–F8 are transferred from solinv (protocol-safety).
+F1–F6 are new (user-safety); F7–F8 are transferred from solinv (protocol-safety); **M1 is a separate
+*authored-mandate* tier** (a spend cap you declare, not a malice pattern — the screen station of the
+`reexec-spec::MandateSpec` shared with Probatio).
 **Implemented today: F1 (drain), F2 (delegate), F3 (authority), F4 (account-close),
-F5 (unknown-program)** — 8 unit tests, and they cover **both SPL Token and Token-2022**
+F5 (unknown-program), and M1 (mandate-conformance)** — 13 lib tests, and they cover **both SPL Token and Token-2022**
 accounts (drainers increasingly use Token-2022; the base layout is shared and mints are
 disambiguated by the account-type byte). F5 stays silent on real DeFi (majors are
 allowlisted: System, Token/Token-2022, ATA, Memo, Jupiter, Raydium AMM+CLMM, Orca,
@@ -223,14 +249,15 @@ custos/
 │   ├── proxy-approve/      #   custom BPF program for the nested-CPI proof
 │   └── artifacts/          #   mainnet .so + account dumps
 └── engine/                 # Stage 1 engine (the real core)
-    ├── src/lib.rs          #   Outcome + invariant bank (F1/F2/F3) + Verdict
+    ├── src/lib.rs          #   Outcome + malice bank (F1–F5) + M1 MandateConformance + bank_with_mandate + Verdict
     ├── src/sim.rs          #   LiteSVM capture (pre/post snapshot)
     ├── src/spl.rs          #   SPL Token wire helpers
 │   ├── src/scenarios.rs    #   shared built-in scenarios (demo + API)
 │   ├── src/bin/demo.rs       #   4 scenarios, one engine, vs balance-diff
 │   ├── src/bin/agent_demo.rs #   agent/solver: authorization vs Custos (payment+hidden-delegate hero)
 │   ├── src/bin/scan.rs       #   LIVE path: scan a real mainnet tx by signature
-│   └── src/bin/live_red.rs   #   LIVE RED: real account state × prospective drainer
+│   ├── src/bin/live_red.rs   #   LIVE RED: real account state × prospective drainer
+│   └── src/bin/mandate_demo.rs # authored mandate: same tx Green (default) → Red (bank_with_mandate)
 ├── api/                    # axum HTTP service over the engine
 │   └── src/main.rs         #   GET /api/demo (verdicts) + GET / (UI)
 ├── web/
