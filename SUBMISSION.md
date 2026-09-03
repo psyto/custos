@@ -1,7 +1,9 @@
 # Custos — submission summary
 
-*The pre-sign firewall for Solana: simulate the transaction you're about to sign against
-real mainnet state, and check what happens to **your** accounts — before you sign.*
+*A pre-broadcast execution firewall for agent payments: re-execute the transaction an
+autonomous agent is about to broadcast against real mainnet state, and refuse to
+broadcast it when it does more than the agent declared. (The same engine also screens a
+human signer's transaction — see [PITCH.md](./PITCH.md), "Second caller".)*
 
 Repo: [`psyto/custos`](https://github.com/psyto/custos) · One-pager: [PITCH.md](./PITCH.md) ·
 Demo script: [DEMO.md](./DEMO.md) · Quickstart: [README](./README.md#quick-start-30s)

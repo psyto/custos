@@ -1,52 +1,74 @@
 # Custos
 
-**Simulate a transaction against real mainnet state and check what happens to *your* accounts — before you sign.**
+**An execution firewall for autonomous agent payments.** Custos re-executes the
+transaction an agent is about to broadcast — against real mainnet state, through the
+real on-chain programs — and refuses to broadcast it when the transaction does more
+than the agent declared.
 
-Custos is a Solana **execution firewall**. Given an unsigned transaction (the one a
-dApp or a phishing site is asking you to sign), Custos clones the relevant mainnet
-account state into a local VM, executes the transaction against the *real* on-chain
-programs, and runs a catalog of **user-protective invariants** on the simulated
-outcome. It returns a plain-language GREEN / YELLOW / RED verdict with a reason.
+> **Authorization** asks *is this payment allowed?*  ·  **Custos** asks *does this
+> transaction do only that — and nothing else?*
+
+Every guard shipped for agent payments today is an **authorization** layer: amount under
+a limit, destination on an allowlist, policy signed. Authorization reads the payment the
+agent *declares*. It cannot read the transaction. A 5 USDC payment to an allowlisted
+merchant, carrying an unlimited token approval in the same transaction, passes every
+authorization policy in production right now:
+
+```
+$ cargo run --bin agent_demo
+Authorization policy (declared intent): PASS
+Custos verification (actual tx): RED ⛔
+  [F2-delegate] 9cGb…q74g — grants delegate GELb…X1mP authority over ALL of your tokens (unlimited)
+Decision: REFUSE TO BROADCAST — principal capital preserved
+```
+
+Given an unsigned transaction, Custos clones the touched mainnet accounts and the real
+on-chain programs into a local VM, executes the transaction, and runs a bank of
+invariants on the **simulated post-state** — not on instruction shapes, not on a
+scam-address list. It returns a plain-language GREEN / YELLOW / RED verdict with a
+reason, in **~235 ms warm** on a real Jupiter swap ([measured](#stage-1-in-progress-engine-core)).
 
 The bet: **signature- and allowlist-based scanners catch yesterday's scams. Custos
-simulates and checks invariants, so it can catch a drainer it has never seen before.**
+re-executes and checks invariants, so it can catch a drain it has never seen before.**
 
 Custos reuses the LiteSVM / Crucible simulation substrate proven in
 [`psyto/solinv`](https://github.com/psyto/solinv) (a Solana-aware invariant fuzzing
 framework with a 168K-execution mainnet calibration record). solinv points that
-engine at a protocol's fuzz campaign; Custos points the same engine at your next
-transaction.
+engine at a protocol's fuzz campaign; Custos points the same engine at the next
+transaction an agent is about to send.
 
 **Two callers, one engine.** The same check guards the moment *before an action
-commits* — whether a **human** is about to sign in their wallet, or an **autonomous
-agent / solver** is about to broadcast on its own, with no human in the loop. For an
-agent, a Kova-style authorization policy (amount ≤ limit, destination allowlisted) only
-sees the payment the agent *declares*; Custos re-executes the *actual* transaction and
-blocks what authorization can't see. See
-[For AI agents & solvers](#for-ai-agents--solvers-pre-broadcast-gate).
+commits* — whether an **autonomous agent / solver** is about to broadcast on its own
+with no human in the loop (**the lane this repo is built for**, and the only lane where
+the moat feature is buildable — see [Differentiation](#differentiation-honest)), or a
+**human** is about to sign in their wallet ([second caller](#second-caller--the-human-signer-wallet-ui)).
 
 ---
 
 ## Quick start (≈30s)
 
 ```bash
-# 1. See the engine catch drainers a balance-diff scanner misses (offline)
-cd engine && cargo run --bin demo
-
-# 2. The wallet-approval UI (three-panel comparison + Phantom intercept)
-cd api && cargo run          # → http://127.0.0.1:8787
-
-# 3. Scan a REAL mainnet transaction by signature
-cd engine && cargo run --bin scan -- <SIGNATURE>
-
-# 4. Real account × prospective drainer → RED on live state
-cd engine && cargo run --bin live_red
-
-# 5. AGENT/SOLVER framing: authorization PASS vs Custos BLOCK on the SAME tx (offline)
+# 1. THE HERO: authorization PASS vs Custos RED on the SAME tx (offline)
 cd engine && cargo run --bin agent_demo
 
-# 6. Solver pre-broadcast gate over the live HTTP API (start the api, step 2, first)
+# 2. Authored spend mandate: same payment Green (default) → Red (max_value_out = 500)
+cd engine && cargo run --bin mandate_demo
+
+# 3. Solver pre-broadcast gate over the live HTTP API
+cd api && cargo run &         # → http://127.0.0.1:8787
 python3 scripts/solver_gate.py
+
+# 4. Scan a REAL mainnet transaction by signature
+cd engine && cargo run --bin scan -- <SIGNATURE>
+
+# 5. Real account × prospective drainer → RED on live state
+cd engine && cargo run --bin live_red
+
+# 6. The invariant bank beside a balance-diff scanner, four scenarios (offline)
+cd engine && cargo run --bin demo
+
+# 7. Second caller — the wallet-approval UI for a human signer
+cd api && cargo run           # → http://127.0.0.1:8787
 ```
 
 No config needed; a public RPC is the default (set `CUSTOS_RPC` for a faster one).
@@ -59,13 +81,9 @@ evidence ledger.
 ## For AI agents & solvers (pre-broadcast gate)
 
 AI agents now hold wallets and pay on their own — over x402 / MPP, through agent
-wallets, inside solver pipelines. There is **no human to catch a bad approval**. The
-usual guard is an *authorization* policy (amount ≤ limit, destination allowlisted) — but
-authorization only sees the action the agent *declares*; it is blind to what the raw
-transaction actually does. That is the Custos gap, one layer up:
-
-> **Authorization** asks *is this payment allowed?*  ·  **Custos** asks *does this
-> transaction do only that — and nothing else?*
+wallets, inside solver pipelines. There is **no human to catch a bad approval**, and the
+usual guard is an *authorization* policy (amount ≤ limit, destination allowlisted) that
+is blind to what the raw transaction actually does. That is the gap Custos closes.
 
 Put Custos on the one road every payment must travel (the solver's pre-broadcast step,
 or the wallet's signer): the agent runs automatically, but each transaction is
@@ -119,9 +137,10 @@ cd engine && cargo run --bin mandate_demo
 
 ## Status: Stage 1 — engine + live firewall working
 
-The technical gate is GREEN and the engine now runs end-to-end: it scans real mainnet
-transactions, flags real prospective drainers (RED) while passing benign swaps (GREEN),
-and serves a wallet-approval UI. Five malice invariants (F1–F5) plus the authored-mandate **M1**
+The technical gate is GREEN and the engine now runs end-to-end: it screens an agent's
+prospective transaction before broadcast, scans real mainnet transactions, flags real
+prospective drainers (RED) while passing benign swaps (GREEN), and also serves a
+wallet-approval UI for the human-signer caller. Five malice invariants (F1–F5) plus the authored-mandate **M1**
 (the screen station of the `reexec-spec` mandate shared with Probatio), with unit tests; a pre-sign
 `/api/scan` endpoint; measured warm latency ~235 ms. Below is how it got here.
 
@@ -179,14 +198,14 @@ Expected tail: `=== GATE RESULT: GREEN — firewall premise holds ===`
 ## How it works (target architecture)
 
 ```
-[dApp / phishing site]  --unsigned tx-->  Custos
-                                            |
-  1. State Loader  --getMultipleAccounts--> mainnet RPC   (clone touched accounts + programs)
-  2. Sim Engine    --LiteSVM.execute------->              (run the REAL programs, capture pre/post + logs)
-  3. Invariant Bank --run detectors-------->              (fire on the simulated outcome)
+[agent / solver pipeline]  --unsigned tx-->  Custos      (or a dApp, for the human signer)
+                                              |
+  1. State Loader  --getMultipleAccounts-->  mainnet RPC   (clone touched accounts + programs)
+  2. Sim Engine    --LiteSVM.execute------->               (run the REAL programs, capture pre/post + logs)
+  3. Invariant Bank --run detectors-------->               (fire on the simulated outcome)
   4. Verdict + plain-language reason
-                                            |
-                            GREEN / YELLOW / RED  -->  [user signs or rejects]
+                                              |
+                              GREEN / YELLOW / RED  -->  [broadcast, or refuse]
 ```
 
 Because Custos **replays a concrete transaction** (rather than *constructing*
@@ -196,8 +215,8 @@ gates. It loads the real on-chain bytecode and real accounts and just executes.
 
 ## Invariant catalog (the IP)
 
-User-protective invariants that fire on the simulated post-state — protecting the
-*signer*, not the protocol:
+Invariants that fire on the simulated post-state — protecting the **account owner**
+(the agent's principal, or the human signer), not the protocol:
 
 | # | Invariant | Fires when | Verdict |
 | - | --------- | ---------- | ------- |
@@ -227,16 +246,35 @@ only what the agent declared?* — full intent-conformance.
 
 ## Differentiation (honest)
 
-Blockaid / Blowfish already do simulation-based previews. Custos competes on three
-axes only:
+Blockaid / Blowfish already ship simulation-based previews **for the consumer wallet**,
+inside closed SaaS. On that lane a newcomer competes on invariant depth alone and is a
+second mover. **This repo does not try to win there.**
 
-1. **Invariant depth + Solana account-model specificity** — catch by *structure*,
-   not by a scam-address list.
-2. **OSS / self-hostable** — the closed SaaS incumbents are not.
-3. **Embeddable SDK + co-signer policy engine** — distributable beyond one wallet.
+**The moat is agent-only, and it is structural.** The complete answer is F6 /
+intent-conformance — *the transaction does only what was declared* — which subsumes
+F1–F5 (a hidden delegate, an authority grab, an extra transfer are all "beyond the
+declared intent"). F6 needs a **declared intent trustworthy enough to check against**:
 
-If the invariant depth can't be *shown* to beat the incumbents in a live demo, this
-is a second-mover. The demo is the product.
+- For a **consumer wallet**, that input is a phishing site's own description of what it
+  is asking you to sign. Checking a transaction against the attacker's claim is
+  worthless — so the incumbents cannot build F6 on their lane, and not for want of
+  engineering.
+- For an **agent**, the declared intent is the agent's own policy layer: signed
+  identity, action class, amount, counterparty. **Trustworthy by construction.**
+
+So the axes are:
+
+1. **Intent-conformance is buildable here and only here.** F6 is the north star and is
+   **not shipped**; [M1](#authored-mandate-conformance-m1--the-screen-station-of-a-shared-mandate)
+   is the first authored slice of it that is.
+2. **Catch by structure, not by list** — invariants on the simulated post-state, with
+   Solana account-model specificity (SPL Token *and* Token-2022, which drainers use).
+3. **OSS / self-hostable** — the closed SaaS incumbents are not, and a solver can run
+   the gate inside its own pipeline with no third party on the payment road.
+
+**Not claimed**: a head-to-head win over a specific simulating incumbent. The
+[`proof_f2`](#gate-history-stage-0) demos show the blind spots of *balance-diff* and
+*instruction-parsing* previews — a narrower statement. See `STAGE0_DESIGN.md` §8b.
 
 ## Repository layout
 
@@ -266,7 +304,11 @@ custos/
     └── solver_gate.py      # solver pre-broadcast gate over the live /api/scan
 ```
 
-### Wallet UI
+### Second caller — the human signer (wallet UI)
+
+**Secondary lane.** The engine is the same; only the caller changes. It is kept because
+it is the cheapest way to *see* an invariant fire, not because the consumer wallet is
+the market — that argument is in [Differentiation](#differentiation-honest).
 
 ```bash
 cd api && cargo run          # → http://127.0.0.1:8787
