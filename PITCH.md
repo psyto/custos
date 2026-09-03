@@ -65,9 +65,9 @@ F4 account-close · F5 unknown-program · **M1 authored-mandate conformance**.
   scan **GREEN**. *(`scan <signature>`.)*
 - **Works on real multi-CPI txs.** A real Jupiter swap assembles + executes to CPI
   depth 3 in the local VM. *(Gate D.)*
-- **Fast enough to sign against.** Warm scan ≈ **235 ms** (programs cached; only account
-  state is fetched live). Cold first-sight ≈ 1.2 s, a one-time per-program cost.
-  *(`profile`.)*
+- **Fast enough to broadcast against.** Warm scan ≈ **250 ms** over a public RPC
+  (2026-09-04; programs cached, only account state ~90 ms is fetched live). First sight
+  of a program adds a one-time acquisition cost. *(`profile`.)*
 
 ## What it is / isn't (honest scope)
 

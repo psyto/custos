@@ -26,7 +26,7 @@ Given an unsigned transaction, Custos clones the touched mainnet accounts and th
 on-chain programs into a local VM, executes the transaction, and runs a bank of
 invariants on the **simulated post-state** — not on instruction shapes, not on a
 scam-address list. It returns a plain-language GREEN / YELLOW / RED verdict with a
-reason, in **~235 ms warm** on a real Jupiter swap ([measured](#stage-1-in-progress-engine-core)).
+reason, in **~250 ms warm** on a real Jupiter swap ([measured](#stage-1-in-progress-engine-core)).
 
 The bet: **signature- and allowlist-based scanners catch yesterday's scams. Custos
 re-executes and checks invariants, so it can catch a drain it has never seen before.**
@@ -142,7 +142,7 @@ prospective transaction before broadcast, scans real mainnet transactions, flags
 prospective drainers (RED) while passing benign swaps (GREEN), and also serves a
 wallet-approval UI for the human-signer caller. Five malice invariants (F1–F5) plus the authored-mandate **M1**
 (the screen station of the `reexec-spec` mandate shared with Probatio), with unit tests; a pre-sign
-`/api/scan` endpoint; measured warm latency ~235 ms. Below is how it got here.
+`/api/scan` endpoint; measured warm latency ~250 ms. Below is how it got here.
 
 ### Gate history (Stage 0)
 
@@ -357,15 +357,18 @@ an in-process program-ELF cache. Measured on a real Jupiter swap (4 programs inc
 Jupiter 2.9 MB + Raydium CLMM 1.7 MB) over the public RPC:
 
 ```
-COLD (first sight, CLI dump) : 1161 ms  = resolve 35 + accounts 102 + programs 992 + sim 4
-WARM (programs cached)       :  235 ms  = resolve 31 + accounts  89 + programs  87 + sim 3
+2026-09-04, public RPC, in-RAM program cache:
+COLD (cache empty)     : 304 ms  = resolve 59 + accounts 110 + programs  92 + sim 5
+WARM (programs cached) : 249 ms  = resolve 43 + accounts  90 + programs  88 + sim 3
 ```
 
-Programs are static, so their ~1 s acquisition is a one-time cost — a service
-pre-warms the top ~50 DeFi programs and nearly every real scan is WARM (~235 ms, well
-under a signing-UX budget). The only live-bound term is account state (~89 ms here),
-which drops further on a dedicated RPC (Helius/Triton). This quantifies the "programs
-cacheable; only account state is live" thesis the design leaned on.
+The only live-bound term is **account state (~90 ms)**, which drops further on a
+dedicated RPC (Helius/Triton); programs are static, so a service pre-warms the top ~50
+DeFi programs and nearly every real scan is WARM. **~250 ms is well under a broadcast
+or signing budget.** The absolute numbers move with the public RPC — an earlier run
+(2026-08-02) measured 235 ms warm, and a genuinely first-sight program fetched by CLI
+dump rather than RPC cost ~1 s, a one-time per-program cost. Re-run it yourself:
+`cargo run --bin profile`.
 
 **Live RED** (`cargo run --bin live_red`): the product's true mode — clone a *real*
 on-chain USDC token account (current state) and simulate a *prospective* drainer
