@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "scripts": { "record": "node record.js" },
+  "scripts": {
+    "record": "node record.js",
+    "record60": "node record60.js"
+  },
   "dependencies": {
     "puppeteer": "^19.0.0",
     "puppeteer-screen-recorder": "^3.0.6"
