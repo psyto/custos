@@ -82,7 +82,7 @@
       <b>Authorization</b> — is this payment allowed?<br>
       <b>Custos</b> — does the transaction do <i>only</i> that, and nothing else?
     </div>
-    <div class="creds">F1–F5 + M1 live&nbsp;&nbsp;·&nbsp;&nbsp;scans real mainnet transactions in ~250&nbsp;ms warm</div>
+    <div class="creds">Solana&nbsp;&nbsp;·&nbsp;&nbsp;SPL Token &amp; Token-2022&nbsp;&nbsp;·&nbsp;&nbsp;F1–F5 + M1 live&nbsp;&nbsp;·&nbsp;&nbsp;~250&nbsp;ms warm on real mainnet state</div>
     <div class="repo">github.com/psyto/custos&nbsp;&nbsp;·&nbsp;&nbsp;open source · self-hostable</div>
   </div>
 </div>
@@ -192,7 +192,7 @@ async function run(){
   await sleep(6600);
 
   await emit(A.slice(iRed, iDec), 260);
-  setCap('Custos re-executes the transaction — the real SPL Token program, the real mint — and reads the account state afterwards. The delegate is there.');
+  setCap('Custos re-executes it against real Solana mainnet state — the real SPL Token program, the real mint — and reads the accounts afterwards. The delegate is there.');
   await sleep(6400);
 
   row(A[iDec]);
